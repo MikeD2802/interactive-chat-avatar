@@ -4,9 +4,15 @@ from langchain_community.llms import Ollama
 from gtts import gTTS
 import os
 import json
+from pathlib import Path
+from PIL import Image
+import numpy as np
+
+from avatar_animation import AvatarAnimator
+from live_portrait_integration import setup_live_portrait
 
 class ChatAvatar:
-    def __init__(self):
+    def __init__(self, source_image_path):
         # Initialize Ollama LLM
         self.llm = Ollama(model="llama2")
         
@@ -18,6 +24,13 @@ class ChatAvatar:
             ("system", "You are a helpful and friendly AI assistant. Respond naturally and conversationally."),
             ("user", "{input}")
         ])
+        
+        # Load and setup LivePortrait
+        self.portrait = setup_live_portrait()
+        self.source_image = Image.open(source_image_path)
+        
+        # Initialize sentiment analyzer for expressions
+        self.animator = AvatarAnimator()
     
     def generate_response(self, user_input):
         # Add user input to history
@@ -38,39 +51,70 @@ class ChatAvatar:
         tts = gTTS(text=text, lang='en')
         tts.save("response.mp3")
         return "response.mp3"
+    
+    def animate_response(self, text):
+        # Analyze sentiment and generate expression parameters
+        sentiment = self.animator.analyze_sentiment(text)
+        expression = self.animator.generate_expression(sentiment)
+        
+        # Generate animation using LivePortrait
+        frames = self.portrait.generate_animation(
+            self.source_image,
+            expression_params=expression
+        )
+        
+        return frames
 
-def create_interface():
-    avatar = ChatAvatar()
+def create_interface(source_image_path):
+    avatar = ChatAvatar(source_image_path)
     
     def chat(message, history):
-        # Generate response
+        # Generate text response
         response = avatar.generate_response(message)
         
-        # Convert to speech
+        # Generate speech
         audio_file = avatar.text_to_speech(response)
         
-        # Here you would trigger the LivePortrait animation
-        # This is a placeholder for the animation logic
-        animate_avatar(response)
+        # Generate animation
+        animation = avatar.animate_response(response)
         
-        return response
+        return {
+            "response": response,
+            "audio": audio_file,
+            "animation": animation
+        }
     
-    def animate_avatar(text):
-        # Placeholder for LivePortrait integration
-        # This would analyze the text sentiment and animate accordingly
-        pass
-    
-    # Create Gradio interface
-    iface = gr.ChatInterface(
-        chat,
-        title="AI Chat Avatar",
-        description="Chat with an AI-powered avatar",
-        examples=["Hello! How are you?", "Tell me about yourself"],
-        theme="default"
-    )
+    # Create Gradio interface with avatar display
+    with gr.Blocks() as iface:
+        with gr.Row():
+            with gr.Column(scale=2):
+                chatbot = gr.Chatbot()
+                msg = gr.Textbox(label="Message")
+                clear = gr.ClearButton([msg, chatbot])
+                
+            with gr.Column(scale=1):
+                avatar_video = gr.Video(label="Avatar")
+                audio_output = gr.Audio(label="Response Audio")
+        
+        msg.submit(
+            chat,
+            [msg, chatbot],
+            [chatbot, avatar_video, audio_output]
+        )
     
     return iface
 
 if __name__ == "__main__":
-    interface = create_interface()
+    # Default source image path
+    source_image = "assets/source_image.jpg"
+    
+    # Create assets directory if it doesn't exist
+    Path("assets").mkdir(exist_ok=True)
+    
+    # Check if source image exists
+    if not Path(source_image).exists():
+        print(f"Please place a source image at {source_image}")
+        exit(1)
+    
+    interface = create_interface(source_image)
     interface.launch()
