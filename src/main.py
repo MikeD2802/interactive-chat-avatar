@@ -1,5 +1,6 @@
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import OllamaLLM  # updated import
+import gradio as gr
 from gtts import gTTS
 import os
 import json
@@ -94,6 +95,7 @@ def create_interface(source_image_path):
     with gr.Blocks() as iface:
         with gr.Row():
             with gr.Column(scale=2):
+                # Explicitly set the type to "messages"
                 chatbot = gr.Chatbot(type="messages")
                 msg = gr.Textbox(label="Message")
                 clear = gr.ClearButton([msg, chatbot])
