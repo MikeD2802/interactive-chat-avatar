@@ -1,97 +1,78 @@
-import os
 import sys
-import torch
-import numpy as np
-from pathlib import Path
+import os
+import logging
 
-class LivePortraitIntegration:
-    def __init__(self, weights_dir="pretrained_weights"):
-        self.weights_dir = Path(weights_dir)
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = None
-        self.setup_environment()
-        
-    def setup_environment(self):
-        """Setup LivePortrait environment and dependencies"""
-        # Add LivePortrait to Python path
-        live_portrait_path = Path("./LivePortrait")
-        if not live_portrait_path.exists():
-            raise RuntimeError(
-                "LivePortrait repository not found. Please clone it first:\n"
-                "git clone https://github.com/KwaiVGI/LivePortrait"
-            )
-        
-        sys.path.append(str(live_portrait_path))
-        
-        # Check for pretrained weights
-        if not self.weights_dir.exists():
-            raise RuntimeError(
-                "Pretrained weights not found. Please download them using:\n"
-                "huggingface-cli download KwaiVGI/LivePortrait --local-dir pretrained_weights"
-            )
-    
-    def initialize_model(self):
-        """Initialize the LivePortrait model"""
-        try:
-            from LivePortrait.src.animator import Animator
-            
-            self.model = Animator(
-                checkpoint_path=str(self.weights_dir / "humans" / "model.pth"),
-                config_path=str(self.weights_dir / "humans" / "config.yaml"),
-                device=self.device
-            )
-            return True
-        except Exception as e:
-            print(f"Failed to initialize LivePortrait model: {str(e)}")
-            return False
-    
-    def generate_animation(self, source_image, expression_params):
-        """Generate avatar animation based on expression parameters
-        
-        Args:
-            source_image: PIL Image or path to source image
-            expression_params: Dict containing animation parameters
-                {
-                    'smile': float (0-1),
-                    'intensity': float (0-1),
-                    'pose': Dict of pose parameters
-                }
+# Add LivePortrait directory to Python path
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+liveportrait_path = os.path.join(project_root, 'LivePortrait')
+sys.path.insert(0, liveportrait_path)
+
+try:
+    from portrait.live_portrait import LivePortrait
+    import torch
+    import numpy as np
+    from PIL import Image
+
+    def setup_live_portrait():
+        """
+        Initialize and setup LivePortrait model
         
         Returns:
-            Numpy array of animation frames
+            LivePortrait instance or None if initialization fails
         """
-        if self.model is None:
-            if not self.initialize_model():
-                return None
+        try:
+            # Ensure CUDA or MPS is available
+            device = torch.device('cuda' if torch.cuda.is_available() else 
+                                  'mps' if torch.backends.mps.is_available() else 
+                                  'cpu')
+            
+            # Initialize LivePortrait model
+            model = LivePortrait(device=device)
+            
+            logging.info(f"LivePortrait initialized on {device}")
+            return model
+        
+        except Exception as e:
+            logging.error(f"Failed to initialize LivePortrait: {e}")
+            return None
+
+    def generate_avatar_animation(model, source_image, expression_params=None):
+        """
+        Generate avatar animation
+        
+        Args:
+            model (LivePortrait): Initialized LivePortrait model
+            source_image (PIL.Image): Source image for animation
+            expression_params (dict, optional): Parameters for facial expression
+        
+        Returns:
+            numpy.ndarray or None: Animated frames
+        """
+        if model is None:
+            logging.error("LivePortrait model is not initialized")
+            return None
         
         try:
-            # Convert expression params to LivePortrait format
-            lp_params = self._convert_expression_params(expression_params)
+            # If no expression params provided, use neutral expression
+            if expression_params is None:
+                expression_params = {'neutral': True}
             
-            # Generate animation frames
-            frames = self.model.animate(
-                source_image,
-                params=lp_params,
-                output_path=None  # Don't save to file
-            )
+            # Generate animation
+            animated_frames = model.generate(source_image, **expression_params)
             
-            return frames
-            
+            return animated_frames
+        
         except Exception as e:
-            print(f"Animation generation failed: {str(e)}")
+            logging.error(f"Failed to generate avatar animation: {e}")
             return None
-    
-    def _convert_expression_params(self, params):
-        """Convert our expression parameters to LivePortrait format"""
-        # This will need to be adjusted based on LivePortrait's exact API
-        lp_params = {
-            'expression': {
-                'smile_intensity': params.get('smile', 0) * params.get('intensity', 1),
-            },
-            'pose': params.get('pose', {})
-        }
-        return lp_params
 
-def setup_live_portrait():
-    """Helper function to set up LivePortrait integration"""
-    return LivePortraitIntegration()
+except ImportError as e:
+    logging.error(f"Could not import LivePortrait: {e}")
+    
+    def setup_live_portrait():
+        logging.error("LivePortrait is not available")
+        return None
+    
+    def generate_avatar_animation(*args, **kwargs):
+        logging.error("LivePortrait is not available")
+        return None
