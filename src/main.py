@@ -1,221 +1,185 @@
-import gradio as gr
-from langchain_ollama import OllamaLLM
-from face_processor import FaceProcessor
-import cv2
-import numpy as np
-from transformers import pipeline
-import os
-import imageio
-import tempfile
-from elevenlabs import generate
-from dotenv import load_dotenv
-import time
-
-class ChatAvatar:
-    def __init__(self, source_image_path):
-        # Load environment variables
-        load_dotenv()
-        
-        # Initialize LLM
-        self.llm = OllamaLLM(model="llama2")
-        
-        # Initialize sentiment analyzer
-        self.sentiment_analyzer = pipeline(
-            "sentiment-analysis",
-            model="distilbert-base-uncased-finetuned-sst-2-english",
-            revision="714eb0f"
-        )
-        
-        # Initialize face processor
-        self.face_processor = FaceProcessor()
-        self.source_image_path = source_image_path
-        
-        # Load and verify source image
-        if not os.path.exists(source_image_path):
-            raise FileNotFoundError(f"Source image not found: {source_image_path}")
-            
-        self.source_image = cv2.imread(source_image_path)
-        if self.source_image is None:
-            raise ValueError(f"Failed to load source image: {source_image_path}")
-            
-        # Verify face detection in source image
-        source_face = self.face_processor.detect_face(self.source_image)
-        if source_face is None:
-            raise ValueError("No face detected in source image")
-            
-        print(f"Initialized ChatAvatar with source image: {source_image_path}")
-        
-    def generate_response(self, message):
-        """Generate a response using the LLM."""
-        try:
-            response = self.llm.invoke(message)
-            print(f"Generated response: {response}")
-            return response
-        except Exception as e:
-            print(f"Error generating response: {e}")
-            return "I apologize, but I'm having trouble generating a response."
-            
-    def text_to_speech(self, text):
-        """Convert text to speech using ElevenLabs."""
-        try:
-            api_key = os.getenv('ELEVENLABS_API_KEY')
-            if not api_key:
-                raise ValueError("ElevenLabs API key not found")
-                
-            audio = generate(
-                text=text,
-                api_key=api_key,
-                voice="Rachel"
-            )
-            
-            # Save audio to temporary file
-            with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_audio:
-                temp_audio.write(audio)
-                return temp_audio.name
-                
-        except Exception as e:
-            print(f"Error generating speech: {e}")
-            return None
-            
-    def animate_response(self, text):
-        """Generate animated response using advanced face processing."""
-        try:
-            # Analyze sentiment to adjust animation style
-            sentiment = self.sentiment_analyzer(text)[0]
-            print(f"Sentiment: {sentiment}")
-            
-            # Adjust face processor parameters based on sentiment
-            if sentiment['label'] == 'POSITIVE':
-                self.face_processor.smooth_factor = 0.7  # Smoother for positive emotions
-            else:
-                self.face_processor.smooth_factor = 0.5  # Default smoothing
-                
-            # Generate frames
-            frames = []
-            cap = cv2.VideoCapture(0)
-            
-            frame_count = 0
-            max_frames = 90  # 3 seconds at 30fps
-            
-            start_time = time.time()
-            while frame_count < max_frames:
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                    
-                # Process frame
-                result = self.face_processor.process_frame(frame)
-                if result is not None:
-                    # Animate source image using detected landmarks
-                    animated_frame = self.face_processor.animate_frame(
-                        self.source_image,
-                        result['landmarks']
-                    )
-                    
-                    if animated_frame is not None:
-                        frames.append(animated_frame)
-                        frame_count += 1
-                        
-                # Add delay based on word count for natural timing
-                words = text.split()
-                delay = len(words) * 0.1  # 100ms per word
-                if time.time() - start_time > delay:
-                    break
-                    
-            cap.release()
-            
-            if not frames:
-                print("No frames were generated")
-                return None
-                
-            # Save animation with high quality
-            output_path = "animation.mp4"
-            imageio.mimsave(
-                output_path,
-                frames,
-                fps=30,
-                quality=8,
-                macro_block_size=None
-            )
-            
-            print(f"Saved animation to: {output_path}")
-            return output_path
-            
-        except Exception as e:
-            print(f"Error in animate_response: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
-
 def create_interface():
-    """Create the Gradio interface."""
-    # Initialize the avatar
+    """Create enhanced Gradio interface."""
     try:
         avatar = ChatAvatar("assets/source_image.jpg")
     except Exception as e:
         print(f"Error initializing avatar: {e}")
         return None
-        
-    def chat(message, history):
-        """Handle chat messages and generate responses."""
-        try:
-            # Generate response
-            response = avatar.generate_response(message)
-            
-            # Generate speech and animation in parallel
-            audio_file = avatar.text_to_speech(response)
-            animation = avatar.animate_response(response)
-            
-            print(f"Response: {response}")
-            print(f"Audio file: {audio_file}")
-            print(f"Animation file: {animation}")
-            
-            return {
-                "response": response,
-                "audio": audio_file,
-                "animation": animation
-            }
-            
-        except Exception as e:
-            print(f"Error in chat function: {e}")
-            import traceback
-            traceback.print_exc()
-            return {
-                "response": "I apologize, but I encountered an error.",
-                "audio": None,
-                "animation": None
-            }
     
     with gr.Blocks(theme=gr.themes.Soft()) as demo:
-        gr.Markdown("# Interactive Chat Avatar")
+        gr.Markdown("# Enhanced Interactive Chat Avatar")
         
         with gr.Row():
+            # Left column for avatar and controls
             with gr.Column(scale=1):
                 video = gr.Video(label="Avatar")
                 audio = gr.Audio(label="Response Audio")
                 
+                with gr.Accordion("Expression Controls", open=False):
+                    eyes_weight = gr.Slider(0, 2, value=1.0, label="Eyes Expression")
+                    mouth_weight = gr.Slider(0, 2, value=1.0, label="Mouth Expression")
+                    eyebrows_weight = gr.Slider(0, 2, value=0.9, label="Eyebrows Expression")
+                    nose_weight = gr.Slider(0, 2, value=0.8, label="Nose Movement")
+                    
+                with gr.Accordion("Animation Controls", open=False):
+                    rotation = gr.Slider(-30, 30, value=0, label="Head Rotation")
+                    scale = gr.Slider(0.5, 1.5, value=1.0, label="Scale")
+                    fps = gr.Slider(15, 60, value=30, step=1, label="FPS")
+                    quality = gr.Slider(1, 10, value=8, step=1, label="Video Quality")
+                    
+                with gr.Accordion("Advanced Settings", open=False):
+                    smooth_factor = gr.Slider(0, 1, value=0.5, label="Motion Smoothing")
+                    transition_frames = gr.Slider(5, 30, value=10, step=1, label="Transition Frames")
+                    enable_retargeting = gr.Checkbox(value=True, label="Enable Retargeting")
+                    stabilization = gr.Checkbox(value=True, label="Enable Stabilization")
+                    
+                with gr.Accordion("Voice Settings", open=False):
+                    voice_selector = gr.Dropdown(
+                        choices=["Rachel", "Bella", "Antoni", "Elli", "Josh", "Arnold", "Adam", "Sam"],
+                        value="Rachel",
+                        label="Voice"
+                    )
+                    voice_speed = gr.Slider(0.5, 2.0, value=1.0, label="Speech Speed")
+                    voice_stability = gr.Slider(0, 1, value=0.5, label="Voice Stability")
+            
+            # Right column for chat
             with gr.Column(scale=2):
                 chatbot = gr.Chatbot(type="messages", height=400)
                 with gr.Row():
                     msg = gr.Textbox(
+                        show_label=False,
                         placeholder="Type your message...",
-                        show_label=False
+                        scale=8
                     )
-                    send = gr.Button("Send")
-                    
-        with gr.Row():
-            clear = gr.Button("Clear Chat")
-            example = gr.Button("Try an Example")
-            
+                    send = gr.Button("Send", scale=1)
+                
+                with gr.Row():
+                    clear = gr.Button("Clear Chat")
+                    example = gr.Button("Try Example")
+                    save_settings = gr.Button("Save Settings")
+                
+                with gr.Accordion("Debug Information", open=False):
+                    debug_info = gr.JSON(label="Last Response Debug Info")
+        
+        def chat(message, history):
+            """Enhanced chat function with parameter updates."""
+            try:
+                # Update animation parameters
+                expression_params = {
+                    'eyes': eyes_weight.value,
+                    'mouth': mouth_weight.value,
+                    'eyebrows': eyebrows_weight.value,
+                    'nose': nose_weight.value
+                }
+                
+                retarget_params = {
+                    'enable': enable_retargeting.value,
+                    'rotation': rotation.value,
+                    'scale': scale.value,
+                    'stabilization': stabilization.value
+                }
+                
+                # Update animation settings
+                avatar.animation_params.update({
+                    'fps': fps.value,
+                    'quality': quality.value,
+                    'transition_frames': transition_frames.value,
+                    'smooth_factor': smooth_factor.value
+                })
+                
+                # Generate response and animations
+                start_time = time.time()
+                response = avatar.generate_response(message)
+                
+                # Update TTS settings
+                avatar.tts_params = {
+                    'voice': voice_selector.value,
+                    'speed': voice_speed.value,
+                    'stability': voice_stability.value
+                }
+                
+                animation = avatar.animate_response(
+                    response,
+                    expression_params=expression_params,
+                    retarget_params=retarget_params
+                )
+                audio = avatar.text_to_speech(response)
+                
+                # Prepare debug information
+                debug_data = {
+                    'processing_time': f"{time.time() - start_time:.2f}s",
+                    'expression_params': expression_params,
+                    'retarget_params': retarget_params,
+                    'animation_params': avatar.animation_params,
+                    'tts_params': avatar.tts_params,
+                    'response_length': len(response),
+                    'animation_path': animation,
+                    'audio_path': audio
+                }
+                
+                # Update debug info
+                debug_info.update(debug_data)
+                
+                # Update chat history
+                history.append({"role": "user", "content": message})
+                history.append({"role": "assistant", "content": response})
+                
+                return history, animation, audio
+                
+            except Exception as e:
+                print(f"Error in chat function: {e}")
+                import traceback
+                traceback.print_exc()
+                return history, None, None
+        
         # Event handlers
+        msg.submit(chat, [msg, chatbot], [chatbot, video, audio])
         send.click(chat, [msg, chatbot], [chatbot, video, audio])
-        clear.click(lambda: None, None, chatbot)
+        clear.click(lambda: [], None, chatbot)
         example.click(
             lambda: "Hi! How are you today?",
             None,
             msg
         )
         
+        def save_current_settings():
+            """Save current settings to a JSON file."""
+            settings = {
+                'expression': {
+                    'eyes': eyes_weight.value,
+                    'mouth': mouth_weight.value,
+                    'eyebrows': eyebrows_weight.value,
+                    'nose': nose_weight.value
+                },
+                'animation': {
+                    'fps': fps.value,
+                    'quality': quality.value,
+                    'transition_frames': transition_frames.value,
+                    'smooth_factor': smooth_factor.value
+                },
+                'retargeting': {
+                    'enable': enable_retargeting.value,
+                    'rotation': rotation.value,
+                    'scale': scale.value,
+                    'stabilization': stabilization.value
+                },
+                'voice': {
+                    'name': voice_selector.value,
+                    'speed': voice_speed.value,
+                    'stability': voice_stability.value
+                }
+            }
+            
+            try:
+                os.makedirs('config', exist_ok=True)
+                with open('config/avatar_settings.json', 'w') as f:
+                    json.dump(settings, f, indent=2)
+                return "Settings saved successfully!"
+            except Exception as e:
+                return f"Error saving settings: {e}"
+        
+        save_settings.click(save_current_settings, None, None)
+    
     return demo
 
 if __name__ == "__main__":
