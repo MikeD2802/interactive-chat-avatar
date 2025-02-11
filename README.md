@@ -1,37 +1,34 @@
 # Interactive Chat Avatar
 
-An interactive chat avatar powered by Llama LLM with live portrait AI integration. This project combines live portrait animation with natural language processing to create an engaging conversational AI avatar.
+An interactive chat avatar powered by LLaMA, SadTalker, and ElevenLabs. This project creates a realistic talking avatar that responds to user input with natural language and facial expressions.
 
 ## Features
 
-- Real-time chat interface using Gradio
-- LLM-powered responses using Llama
-- Text-to-speech conversion
-- Sentiment-based avatar animations using LivePortrait
-- Live portrait integration for realistic facial expressions
+* Realistic talking avatar using SadTalker
+* Natural language responses using LLaMA
+* High-quality voice synthesis with ElevenLabs
+* Real-time chat interface using Gradio
+* Automatic model downloading and setup
 
 ## Prerequisites
 
 1. NVIDIA GPU with CUDA support (recommended)
 2. Python 3.10
 3. Git
+4. [Ollama](https://ollama.ai) installed
 
 ## Setup
 
-1. Clone the repository and LivePortrait:
+1. Clone the repository:
 ```bash
-# Clone main repository
 git clone https://github.com/MikeD2802/interactive-chat-avatar.git
 cd interactive-chat-avatar
-
-# Clone LivePortrait
-git clone https://github.com/KwaiVGI/LivePortrait
 ```
 
 2. Create and activate a conda environment:
 ```bash
-conda create -n chat-avatar python=3.10
-conda activate chat-avatar
+conda create -n avatar-chat python=3.10
+conda activate avatar-chat
 ```
 
 3. Install PyTorch with CUDA support:
@@ -45,23 +42,15 @@ pip install torch==2.3.0 torchvision==0.18.0 torchaudio==2.3.0 --index-url https
 pip install -r requirements.txt
 ```
 
-5. Download LivePortrait pretrained weights:
+5. Download LLaMA model:
 ```bash
-pip install -U "huggingface_hub[cli]"
-huggingface-cli download KwaiVGI/LivePortrait --local-dir pretrained_weights --exclude "*.git*" "README.md" "docs"
-```
-
-6. Install Ollama and download the Llama model:
-```bash
-# Follow instructions at ollama.ai to install Ollama
 ollama pull llama2
 ```
 
-7. Prepare your avatar source image:
+6. Prepare your avatar source image:
 ```bash
-# Place your desired avatar image in the assets directory
 mkdir -p assets
-# Copy your image to assets/source_image.jpg
+# Add your image as assets/source_image.jpg
 ```
 
 ## Running the Application
@@ -77,12 +66,47 @@ python src/main.py
 
 ## Project Structure
 
-- `src/main.py`: Core application logic and chat interface
-- `src/avatar_animation.py`: Avatar animation and sentiment analysis
-- `src/live_portrait_integration.py`: LivePortrait model integration
-- `requirements.txt`: Project dependencies
-- `assets/`: Directory for source images and other assets
-- `pretrained_weights/`: Directory for LivePortrait model weights
+* `src/main.py`: Core application and Gradio interface
+* `src/avatar_generator.py`: SadTalker integration
+* `src/utils/download.py`: Model download utilities
+* `requirements.txt`: Project dependencies
+* `assets/`: Directory for source images
+
+## How It Works
+
+1. User sends a message through the Gradio interface
+2. LLaMA processes the message and generates a response
+3. ElevenLabs converts the response to speech
+4. SadTalker animates the avatar to match the speech
+5. The result is displayed in real-time in the interface
+
+## Customization
+
+1. Avatar Image:
+   - Replace `assets/source_image.jpg` with your preferred image
+   - Image should be a clear front-facing portrait
+
+2. Voice:
+   - Modify the voice ID in `src/main.py` to use different ElevenLabs voices
+   - Available voices can be found in your ElevenLabs dashboard
+
+3. Language Model:
+   - Different LLaMA models can be used by modifying the model name in `src/main.py`
+   - Other Ollama models can be used as well
+
+## Troubleshooting
+
+1. CUDA Issues:
+   - Ensure NVIDIA drivers are up to date
+   - Check CUDA version compatibility with PyTorch
+
+2. Memory Issues:
+   - Reduce batch size in avatar_generator.py
+   - Use a smaller LLaMA model
+
+3. Model Downloads:
+   - Check internet connection
+   - Ensure enough disk space for models
 
 ## Contributing
 
@@ -94,6 +118,7 @@ MIT License
 
 ## Acknowledgments
 
-- [LivePortrait](https://github.com/KwaiVGI/LivePortrait) for the portrait animation technology
-- [Ollama](https://ollama.ai/) for the LLM integration
-- [Gradio](https://www.gradio.app/) for the web interface
+* [SadTalker](https://github.com/OpenTalker/SadTalker) for the talking face animation
+* [Ollama](https://ollama.ai/) for the LLM integration
+* [ElevenLabs](https://elevenlabs.io/) for voice synthesis
+* [Gradio](https://www.gradio.app/) for the web interface
