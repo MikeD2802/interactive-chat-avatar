@@ -1,190 +1,250 @@
+import gradio as gr
+from langchain_ollama import OllamaLLM
+from face_processor import FaceProcessor
+import cv2
+import numpy as np
+from transformers import pipeline
+import os
+import imageio
+import tempfile
+from elevenlabs import generate
+from dotenv import load_dotenv
+import time
+import json
+import traceback
+
+class ChatAvatar:
+    def __init__(self, source_image_path):
+        print("\n=== Initializing ChatAvatar ===")
+        # Load environment variables
+        load_dotenv()
+        print("Loaded environment variables")
+        
+        try:
+            # Initialize LLM
+            print("Initializing LLM...")
+            self.llm = OllamaLLM(model="llama2")
+            print("LLM initialized successfully")
+        except Exception as e:
+            print(f"Error initializing LLM: {e}")
+            traceback.print_exc()
+            raise
+        
+        try:
+            # Initialize sentiment analyzer
+            print("Initializing sentiment analyzer...")
+            self.sentiment_analyzer = pipeline(
+                "sentiment-analysis",
+                model="distilbert-base-uncased-finetuned-sst-2-english",
+                revision="714eb0f"
+            )
+            print("Sentiment analyzer initialized successfully")
+        except Exception as e:
+            print(f"Error initializing sentiment analyzer: {e}")
+            traceback.print_exc()
+            raise
+        
+        try:
+            # Initialize face processor
+            print("Initializing face processor...")
+            self.face_processor = FaceProcessor()
+            self.source_image_path = source_image_path
+            print("Face processor initialized successfully")
+        except Exception as e:
+            print(f"Error initializing face processor: {e}")
+            traceback.print_exc()
+            raise
+        
+        # Load and verify source image
+        try:
+            print(f"Loading source image from: {source_image_path}")
+            if not os.path.exists(source_image_path):
+                raise FileNotFoundError(f"Source image not found: {source_image_path}")
+            
+            self.source_image = cv2.imread(source_image_path)
+            if self.source_image is None:
+                raise ValueError(f"Failed to load source image: {source_image_path}")
+            
+            print(f"Source image loaded successfully. Shape: {self.source_image.shape}")
+            
+            # Verify face detection
+            print("Detecting face in source image...")
+            source_face = self.face_processor.detect_face(self.source_image)
+            if source_face is None:
+                raise ValueError("No face detected in source image")
+            print("Face detected successfully in source image")
+            
+        except Exception as e:
+            print(f"Error loading source image: {e}")
+            traceback.print_exc()
+            raise
+
+    def generate_response(self, message):
+        """Generate a response using the LLM."""
+        print(f"\n=== Generating response for: {message} ===")
+        try:
+            response = self.llm.invoke(message)
+            print(f"Generated response: {response}")
+            return response
+        except Exception as e:
+            print(f"Error generating response: {e}")
+            traceback.print_exc()
+            return "I apologize, but I'm having trouble generating a response."
+
+    def text_to_speech(self, text):
+        """Convert text to speech using ElevenLabs."""
+        print(f"\n=== Converting to speech: {text[:50]}... ===")
+        try:
+            api_key = os.getenv('ELEVENLABS_API_KEY')
+            if not api_key:
+                raise ValueError("ElevenLabs API key not found in environment variables")
+            print("Found ElevenLabs API key")
+            
+            print("Generating audio...")
+            audio = generate(
+                text=text,
+                api_key=api_key,
+                voice="Rachel"
+            )
+            print("Audio generated successfully")
+            
+            # Save audio to temporary file
+            with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_audio:
+                temp_audio.write(audio)
+                print(f"Audio saved to: {temp_audio.name}")
+                return temp_audio.name
+        
+        except Exception as e:
+            print(f"Error generating speech: {e}")
+            traceback.print_exc()
+            return None
+
+    def animate_response(self, text):
+        """Generate animated response."""
+        print(f"\n=== Animating response: {text[:50]}... ===")
+        try:
+            # Analyze sentiment
+            print("Analyzing sentiment...")
+            sentiment = self.sentiment_analyzer(text)[0]
+            print(f"Sentiment analysis result: {sentiment}")
+            
+            frames = []
+            print("Generating animation frames...")
+            
+            # Process frame
+            print("Processing source image...")
+            result = self.face_processor.process_frame(self.source_image)
+            
+            if result is None:
+                print("Error: Face processor returned no result")
+                return None
+                
+            if not result.get('face_detected'):
+                print("Error: No face detected in processed frame")
+                return None
+            
+            print("Generating animation frame...")
+            frame = self.face_processor.animate_frame(
+                self.source_image,
+                result['landmarks']
+            )
+            
+            if frame is not None:
+                frames.append(frame)
+                print(f"Generated frame {len(frames)}")
+            
+            if not frames:
+                print("Error: No frames were generated")
+                return None
+            
+            # Save animation
+            print("Saving animation...")
+            output_path = "animation.mp4"
+            imageio.mimsave(
+                output_path,
+                frames,
+                fps=30,
+                quality=8,
+                macro_block_size=None
+            )
+            
+            print(f"Animation saved to: {output_path}")
+            return output_path
+            
+        except Exception as e:
+            print(f"Error in animate_response: {e}")
+            traceback.print_exc()
+            return None
+
 def create_interface():
-    """Create enhanced Gradio interface."""
+    """Create the Gradio interface."""
+    print("\n=== Creating Gradio Interface ===")
     try:
         avatar = ChatAvatar("assets/source_image.jpg")
     except Exception as e:
         print(f"Error initializing avatar: {e}")
+        traceback.print_exc()
         return None
+        
+    def chat(message, history):
+        """Handle chat messages and generate responses."""
+        print(f"\n=== Processing chat message: {message} ===")
+        try:
+            # Generate response
+            response = avatar.generate_response(message)
+            print(f"Generated response: {response}")
+            
+            # Generate speech and animation
+            print("Generating speech and animation...")
+            audio_file = avatar.text_to_speech(response)
+            animation = avatar.animate_response(response)
+            
+            print(f"Processing complete. Audio: {audio_file}, Animation: {animation}")
+            
+            history.append({"role": "user", "content": message})
+            history.append({"role": "assistant", "content": response})
+            
+            return history, animation, audio_file
+            
+        except Exception as e:
+            print(f"Error in chat function: {e}")
+            traceback.print_exc()
+            history.append({"role": "user", "content": message})
+            history.append({"role": "assistant", "content": "I apologize, but I encountered an error."})
+            return history, None, None
     
     with gr.Blocks(theme=gr.themes.Soft()) as demo:
-        gr.Markdown("# Enhanced Interactive Chat Avatar")
+        gr.Markdown("# Interactive Chat Avatar")
         
         with gr.Row():
-            # Left column for avatar and controls
             with gr.Column(scale=1):
                 video = gr.Video(label="Avatar")
                 audio = gr.Audio(label="Response Audio")
                 
-                with gr.Accordion("Expression Controls", open=False):
-                    eyes_weight = gr.Slider(0, 2, value=1.0, label="Eyes Expression")
-                    mouth_weight = gr.Slider(0, 2, value=1.0, label="Mouth Expression")
-                    eyebrows_weight = gr.Slider(0, 2, value=0.9, label="Eyebrows Expression")
-                    nose_weight = gr.Slider(0, 2, value=0.8, label="Nose Movement")
-                    
-                with gr.Accordion("Animation Controls", open=False):
-                    rotation = gr.Slider(-30, 30, value=0, label="Head Rotation")
-                    scale = gr.Slider(0.5, 1.5, value=1.0, label="Scale")
-                    fps = gr.Slider(15, 60, value=30, step=1, label="FPS")
-                    quality = gr.Slider(1, 10, value=8, step=1, label="Video Quality")
-                    
-                with gr.Accordion("Advanced Settings", open=False):
-                    smooth_factor = gr.Slider(0, 1, value=0.5, label="Motion Smoothing")
-                    transition_frames = gr.Slider(5, 30, value=10, step=1, label="Transition Frames")
-                    enable_retargeting = gr.Checkbox(value=True, label="Enable Retargeting")
-                    stabilization = gr.Checkbox(value=True, label="Enable Stabilization")
-                    
-                with gr.Accordion("Voice Settings", open=False):
-                    voice_selector = gr.Dropdown(
-                        choices=["Rachel", "Bella", "Antoni", "Elli", "Josh", "Arnold", "Adam", "Sam"],
-                        value="Rachel",
-                        label="Voice"
-                    )
-                    voice_speed = gr.Slider(0.5, 2.0, value=1.0, label="Speech Speed")
-                    voice_stability = gr.Slider(0, 1, value=0.5, label="Voice Stability")
-            
-            # Right column for chat
             with gr.Column(scale=2):
                 chatbot = gr.Chatbot(type="messages", height=400)
                 with gr.Row():
                     msg = gr.Textbox(
-                        show_label=False,
                         placeholder="Type your message...",
-                        scale=8
+                        show_label=False
                     )
-                    send = gr.Button("Send", scale=1)
-                
-                with gr.Row():
-                    clear = gr.Button("Clear Chat")
-                    example = gr.Button("Try Example")
-                    save_settings = gr.Button("Save Settings")
-                
-                with gr.Accordion("Debug Information", open=False):
-                    debug_info = gr.JSON(label="Last Response Debug Info")
-        
-        def chat(message, history):
-            """Enhanced chat function with parameter updates."""
-            try:
-                # Update animation parameters
-                expression_params = {
-                    'eyes': eyes_weight.value,
-                    'mouth': mouth_weight.value,
-                    'eyebrows': eyebrows_weight.value,
-                    'nose': nose_weight.value
-                }
-                
-                retarget_params = {
-                    'enable': enable_retargeting.value,
-                    'rotation': rotation.value,
-                    'scale': scale.value,
-                    'stabilization': stabilization.value
-                }
-                
-                # Update animation settings
-                avatar.animation_params.update({
-                    'fps': fps.value,
-                    'quality': quality.value,
-                    'transition_frames': transition_frames.value,
-                    'smooth_factor': smooth_factor.value
-                })
-                
-                # Generate response and animations
-                start_time = time.time()
-                response = avatar.generate_response(message)
-                
-                # Update TTS settings
-                avatar.tts_params = {
-                    'voice': voice_selector.value,
-                    'speed': voice_speed.value,
-                    'stability': voice_stability.value
-                }
-                
-                animation = avatar.animate_response(
-                    response,
-                    expression_params=expression_params,
-                    retarget_params=retarget_params
-                )
-                audio = avatar.text_to_speech(response)
-                
-                # Prepare debug information
-                debug_data = {
-                    'processing_time': f"{time.time() - start_time:.2f}s",
-                    'expression_params': expression_params,
-                    'retarget_params': retarget_params,
-                    'animation_params': avatar.animation_params,
-                    'tts_params': avatar.tts_params,
-                    'response_length': len(response),
-                    'animation_path': animation,
-                    'audio_path': audio
-                }
-                
-                # Update debug info
-                debug_info.update(debug_data)
-                
-                # Update chat history
-                history.append({"role": "user", "content": message})
-                history.append({"role": "assistant", "content": response})
-                
-                return history, animation, audio
-                
-            except Exception as e:
-                print(f"Error in chat function: {e}")
-                import traceback
-                traceback.print_exc()
-                return history, None, None
-        
+                    send = gr.Button("Send")
+                    
+        with gr.Row():
+            clear = gr.Button("Clear Chat")
+            
         # Event handlers
         msg.submit(chat, [msg, chatbot], [chatbot, video, audio])
         send.click(chat, [msg, chatbot], [chatbot, video, audio])
-        clear.click(lambda: [], None, chatbot)
-        example.click(
-            lambda: "Hi! How are you today?",
-            None,
-            msg
-        )
+        clear.click(lambda: None, None, chatbot)
         
-        def save_current_settings():
-            """Save current settings to a JSON file."""
-            settings = {
-                'expression': {
-                    'eyes': eyes_weight.value,
-                    'mouth': mouth_weight.value,
-                    'eyebrows': eyebrows_weight.value,
-                    'nose': nose_weight.value
-                },
-                'animation': {
-                    'fps': fps.value,
-                    'quality': quality.value,
-                    'transition_frames': transition_frames.value,
-                    'smooth_factor': smooth_factor.value
-                },
-                'retargeting': {
-                    'enable': enable_retargeting.value,
-                    'rotation': rotation.value,
-                    'scale': scale.value,
-                    'stabilization': stabilization.value
-                },
-                'voice': {
-                    'name': voice_selector.value,
-                    'speed': voice_speed.value,
-                    'stability': voice_stability.value
-                }
-            }
-            
-            try:
-                os.makedirs('config', exist_ok=True)
-                with open('config/avatar_settings.json', 'w') as f:
-                    json.dump(settings, f, indent=2)
-                return "Settings saved successfully!"
-            except Exception as e:
-                return f"Error saving settings: {e}"
-        
-        save_settings.click(save_current_settings, None, None)
-    
     return demo
 
 if __name__ == "__main__":
+    print("\n=== Starting Application ===")
     demo = create_interface()
     if demo:
+        print("Launching Gradio interface...")
         demo.launch(debug=True)
     else:
         print("Failed to initialize the interface")
