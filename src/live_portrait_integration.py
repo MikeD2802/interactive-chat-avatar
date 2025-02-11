@@ -79,6 +79,11 @@ class LivePortraitIntegration:
             if not config_path.exists() or not model_path.exists():
                 raise FileNotFoundError(f"Model files not found in {self.weights_dir}")
             
+            # Debug print for model paths
+            print(f"Loading LivePortrait model from:")
+            print(f"  Config: {config_path}")
+            print(f"  Model: {model_path}")
+            
             # Initialize model
             self.model = LivePortrait(
                 checkpoint_path=str(model_path),
@@ -86,7 +91,8 @@ class LivePortraitIntegration:
                 device=self.device
             )
             
-            logging.info("LivePortrait model initialized successfully")
+            print(f"LivePortrait model initialized successfully on {self.device}")
+            return True
         except ImportError as e:
             logging.error(f"Failed to import LivePortrait: {e}")
             raise
@@ -94,13 +100,22 @@ class LivePortraitIntegration:
             logging.error(f"Model initialization failed: {e}")
             raise
     
-    def generate_animation(self, source_image, expression_params=None):
-        """Generate avatar animation"""
+    def generate_animation(self, source_image, expression_params):
+        """Generate avatar animation based on expression parameters"""
         if self.model is None:
             logging.error("Model not initialized")
             return None
         
         try:
+            # Debug print for function inputs
+            print("Source image type:", type(source_image))
+            print("Source image size:", source_image.size)
+            print("Expression parameters:", expression_params)
+            
+            # Convert image to numpy if it's a PIL Image
+            if isinstance(source_image, Image.Image):
+                source_image = np.array(source_image)
+            
             # Default expression if not provided
             if expression_params is None:
                 expression_params = {
@@ -108,17 +123,47 @@ class LivePortraitIntegration:
                     'intensity': 0.5
                 }
             
+            # Debug: show converted source image details
+            print("Numpy image shape:", source_image.shape)
+            print("Numpy image dtype:", source_image.dtype)
+            
+            # Convert expression params to LivePortrait format
+            lp_params = self._convert_expression_params(expression_params)
+            print("Converted LivePortrait parameters:", lp_params)
+            
             # Generate animation frames
             frames = self.model.animate(
                 source_image, 
-                params=expression_params
+                params=lp_params,
+                output_path=None  # Don't save to file
             )
             
+            # Debug frames
+            if frames is not None:
+                print("Generated frames:")
+                print("  Number of frames:", len(frames))
+                if len(frames) > 0:
+                    print("  First frame shape:", frames[0].shape)
+                    print("  First frame dtype:", frames[0].dtype)
+            
             return frames
-        
+            
         except Exception as e:
-            logging.error(f"Animation generation failed: {e}")
+            print(f"Animation generation failed: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return None
+    
+    def _convert_expression_params(self, params):
+        """Convert our expression parameters to LivePortrait format"""
+        # This will need to be adjusted based on LivePortrait's exact API
+        lp_params = {
+            'expression': {
+                'smile_intensity': params.get('smile', 0) * params.get('intensity', 1),
+            },
+            'pose': params.get('pose', {})
+        }
+        return lp_params
 
 def setup_live_portrait():
     """Helper function to set up LivePortrait integration"""
