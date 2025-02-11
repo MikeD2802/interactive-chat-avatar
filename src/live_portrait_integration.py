@@ -1,109 +1,125 @@
-import sys
 import os
+import sys
 import logging
-
-# Debugging: Print Python path
-print("Python Path:", sys.path)
-
-# Add LivePortrait directory to Python path
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-liveportrait_path = os.path.join(project_root, 'LivePortrait')
-sys.path.insert(0, liveportrait_path)
-
-# Debugging: List contents of LivePortrait directory
-print("LivePortrait Directory Contents:", os.listdir(liveportrait_path))
+from pathlib import Path
 
 try:
-    # Try different import strategies
-    try:
-        from portrait.live_portrait import LivePortrait
-    except ImportError:
-        try:
-            from LivePortrait.portrait.live_portrait import LivePortrait
-        except ImportError:
-            # Fallback import attempt
-            import importlib.util
-            spec = importlib.util.spec_from_file_location(
-                "LivePortrait", 
-                os.path.join(liveportrait_path, "portrait", "live_portrait.py")
-            )
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            LivePortrait = module.LivePortrait
-
     import torch
     import numpy as np
     from PIL import Image
+except ImportError:
+    print("Please install required dependencies: torch, numpy, Pillow")
+    sys.exit(1)
 
-    def setup_live_portrait():
-        """
-        Initialize and setup LivePortrait model
+class LivePortraitIntegration:
+    def __init__(self, weights_dir="pretrained_weights"):
+        # Configure logging
+        logging.basicConfig(level=logging.INFO, 
+                            format='%(asctime)s - %(levelname)s - %(message)s')
         
-        Returns:
-            LivePortrait instance or None if initialization fails
-        """
+        # Set weights directory
+        self.weights_dir = Path(weights_dir)
+        
+        # Determine device
+        self.device = torch.device(
+            'cuda' if torch.cuda.is_available() else 
+            'mps' if torch.backends.mps.is_available() else 
+            'cpu'
+        )
+        
+        # Model and related attributes
+        self.model = None
+        
+        # Setup environment and initialize
         try:
-            # Ensure CUDA or MPS is available
-            device = torch.device('cuda' if torch.cuda.is_available() else 
-                                  'mps' if torch.backends.mps.is_available() else 
-                                  'cpu')
-            
-            # Initialize LivePortrait model
-            model = LivePortrait(device=device)
-            
-            logging.info(f"LivePortrait initialized on {device}")
-            return model
-        
+            self.setup_environment()
+            self.initialize_model()
         except Exception as e:
-            logging.error(f"Failed to initialize LivePortrait: {e}")
-            # Print detailed error information
-            import traceback
-            traceback.print_exc()
-            return None
-
-    def generate_avatar_animation(model, source_image, expression_params=None):
-        """
-        Generate avatar animation
+            logging.error(f"LivePortrait initialization failed: {e}")
+            raise
+    
+    def setup_environment(self):
+        """Setup LivePortrait environment and dependencies"""
+        # Add LivePortrait to Python path
+        live_portrait_path = Path("./LivePortrait")
         
-        Args:
-            model (LivePortrait): Initialized LivePortrait model
-            source_image (PIL.Image): Source image for animation
-            expression_params (dict, optional): Parameters for facial expression
+        if not live_portrait_path.exists():
+            logging.warning("LivePortrait repository not found. Attempting to clone...")
+            import subprocess
+            try:
+                subprocess.run(["git", "clone", "https://github.com/KwaiVGI/LivePortrait"], 
+                               check=True)
+            except subprocess.CalledProcessError:
+                logging.error("Failed to clone LivePortrait repository")
+                raise RuntimeError("Could not clone LivePortrait repository")
         
-        Returns:
-            numpy.ndarray or None: Animated frames
-        """
-        if model is None:
-            logging.error("LivePortrait model is not initialized")
+        # Add to system path
+        sys.path.append(str(live_portrait_path))
+        
+        # Check for pretrained weights
+        if not self.weights_dir.exists() or not any(self.weights_dir.iterdir()):
+            logging.warning("Pretrained weights not found. Please download them.")
+            raise RuntimeError(
+                "Pretrained weights not found. Download using:\n"
+                "huggingface-cli download KwaiVGI/LivePortrait "
+                "--local-dir pretrained_weights"
+            )
+    
+    def initialize_model(self):
+        """Initialize the LivePortrait model"""
+        try:
+            # Dynamically import to avoid early import errors
+            from LivePortrait.src.portrait.live_portrait import LivePortrait
+            
+            # Path to the model configuration
+            config_path = self.weights_dir / "humans" / "config.yaml"
+            model_path = self.weights_dir / "humans" / "model.pth"
+            
+            # Validate paths
+            if not config_path.exists() or not model_path.exists():
+                raise FileNotFoundError(f"Model files not found in {self.weights_dir}")
+            
+            # Initialize model
+            self.model = LivePortrait(
+                checkpoint_path=str(model_path),
+                config_path=str(config_path),
+                device=self.device
+            )
+            
+            logging.info("LivePortrait model initialized successfully")
+        except ImportError as e:
+            logging.error(f"Failed to import LivePortrait: {e}")
+            raise
+        except Exception as e:
+            logging.error(f"Model initialization failed: {e}")
+            raise
+    
+    def generate_animation(self, source_image, expression_params=None):
+        """Generate avatar animation"""
+        if self.model is None:
+            logging.error("Model not initialized")
             return None
         
         try:
-            # If no expression params provided, use neutral expression
+            # Default expression if not provided
             if expression_params is None:
-                expression_params = {'neutral': True}
+                expression_params = {
+                    'smile': 0.5,
+                    'intensity': 0.5
+                }
             
-            # Generate animation
-            animated_frames = model.generate(source_image, **expression_params)
+            # Generate animation frames
+            frames = self.model.animate(
+                source_image, 
+                params=expression_params
+            )
             
-            return animated_frames
+            return frames
         
         except Exception as e:
-            logging.error(f"Failed to generate avatar animation: {e}")
-            # Print detailed error information
-            import traceback
-            traceback.print_exc()
+            logging.error(f"Animation generation failed: {e}")
             return None
 
-except ImportError as e:
-    logging.error(f"Could not import LivePortrait: {e}")
-    
-    def setup_live_portrait():
-        logging.error("LivePortrait is not available")
-        # Print detailed import error information
-        import traceback
-        traceback.print_exc()
-        return None
-    
-    def generate_avatar_animation(*args, **kwargs):
-        logging.error("LivePortrait is not available")
-        return None
+def setup_live_portrait():
+    """Helper function to set up LivePortrait integration"""
+    return LivePortraitIntegration()
