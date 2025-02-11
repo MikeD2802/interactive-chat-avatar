@@ -1,36 +1,48 @@
 import gradio as gr
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_ollama import OllamaLLM  # Updated import
+from langchain_ollama import OllamaLLM
 from gtts import gTTS
 import os
 import json
 from pathlib import Path
 from PIL import Image
 import numpy as np
+from transformers import pipeline
 
 from avatar_animation import AvatarAnimator
 from live_portrait_integration import setup_live_portrait
 
 class ChatAvatar:
     def __init__(self, source_image_path):
-        # Initialize Ollama LLM
-        self.llm = OllamaLLM(model="llama2")
+        # Initialize Ollama LLM with explicit configuration
+        self.llm = OllamaLLM(
+            model="llama2",
+            temperature=0.7,  # Add temperature for more dynamic responses
+            top_p=0.9,  # Optional: additional LLM parameter
+            num_ctx=4096  # Optional: context window size
+        )
         
         # Initialize conversation history
         self.history = []
         
-        # Define avatar personality prompt
+        # Define avatar personality prompt with more context
         self.prompt = ChatPromptTemplate.from_messages([
-            ("system", "You are a helpful and friendly AI assistant. Respond naturally and conversationally."),
+            ("system", "You are a helpful and friendly AI assistant. Respond naturally and conversationally, with empathy and clarity."),
             ("user", "{input}")
         ])
+        
+        # Use a specific sentiment analysis model
+        self.sentiment_analyzer = pipeline(
+            "sentiment-analysis", 
+            model="distilbert-base-uncased-finetuned-sst-2-english"
+        )
         
         # Load and setup LivePortrait
         self.portrait = setup_live_portrait()
         self.source_image = Image.open(source_image_path)
         
         # Initialize sentiment analyzer for expressions
-        self.animator = AvatarAnimator()
+        self.animator = AvatarAnimator(sentiment_analyzer=self.sentiment_analyzer)
     
     def generate_response(self, user_input):
         # Add user input to history
@@ -54,7 +66,7 @@ class ChatAvatar:
     
     def animate_response(self, text):
         # Analyze sentiment and generate expression parameters
-        sentiment = self.animator.analyze_sentiment(text)
+        sentiment = self.sentiment_analyzer(text)[0]
         expression = self.animator.generate_expression(sentiment)
         
         # Generate animation using LivePortrait
@@ -88,6 +100,7 @@ def create_interface(source_image_path):
     with gr.Blocks() as iface:
         with gr.Row():
             with gr.Column(scale=2):
+                # Explicitly set the type parameter to 'messages'
                 chatbot = gr.Chatbot(type="messages")
                 msg = gr.Textbox(label="Message")
                 clear = gr.ClearButton([msg, chatbot])
