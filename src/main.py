@@ -1,227 +1,105 @@
 import os
-import sys
-import logging
-from dotenv import load_dotenv
-load_dotenv()
-
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_ollama import OllamaLLM
 import gradio as gr
+import asyncio
+import tempfile
 from pathlib import Path
-from PIL import Image
-import numpy as np
-from transformers import pipeline
-import imageio  # make sure this import is at the top
-
-from avatar_animation import AvatarAnimator
-from live_portrait_integration import setup_live_portrait
-from src.elevenlabs_tts import elevenlabs_text_to_speech
-
-# Configure logging
-logging.basicConfig(level=logging.DEBUG, 
-                    format='%(asctime)s - %(levelname)s - %(message)s',
-                    handlers=[
-                        logging.StreamHandler(sys.stdout),
-                        logging.FileHandler('avatar_debug.log')
-                    ])
+from avatar_generator import AvatarGenerator
+from elevenlabs import generate, save
+import ollama
 
 class ChatAvatar:
-    def __init__(self, source_image_path):
-        # Extensive logging for initialization
-        logging.info(f"Initializing ChatAvatar with source image: {source_image_path}")
+    def __init__(self):
+        self.avatar_generator = AvatarGenerator()
+        self.conversation_history = []
+        self.temp_dir = tempfile.mkdtemp()
         
-        # Initialize updated Ollama LLM
-        self.llm = OllamaLLM(model="llama2")
+    async def initialize(self):
+        """Initialize all required components"""
+        await self.avatar_generator.initialize()
+        self.llm = ollama.Client()
+        await self.llm.pull('llama2')
         
-        # Initialize conversation history
-        self.history = []
-        
-        # Define avatar personality prompt
-        self.prompt = ChatPromptTemplate.from_messages([
-            ("system", "You are a helpful and friendly AI assistant. Respond naturally and conversationally."),
-            ("user", "{input}")
-        ])
-        
-        # Use a specific sentiment analysis model
-        self.sentiment_analyzer = pipeline(
-            "sentiment-analysis", 
-            model="distilbert-base-uncased-finetuned-sst-2-english",
-            revision="714eb0f"
-        )
-        
-        # Verify and load source image with extensive error handling
+    async def generate_response(self, message, history):
+        """Generate LLM response and avatar animation"""
         try:
-            # Check image path exists
-            source_path = Path(source_image_path)
-            if not source_path.exists():
-                logging.error(f"Source image not found at {source_image_path}")
-                logging.error(f"Current working directory: {os.getcwd()}")
-                logging.error(f"Contents of assets directory: {os.listdir('assets') if os.path.exists('assets') else 'assets directory not found'}")
-                raise FileNotFoundError(f"Source image not found at {source_image_path}")
+            # Get LLM response
+            response = await self.llm.generate('llama2', prompt=message)
+            response_text = response['response']
             
-            # Open and validate image
-            self.source_image = Image.open(source_path)
-            logging.info(f"Image loaded successfully. Size: {self.source_image.size}, Mode: {self.source_image.mode}")
+            # Generate speech using ElevenLabs
+            audio_path = os.path.join(self.temp_dir, 'response.wav')
+            audio = generate(
+                text=response_text,
+                voice="Rachel",
+                model="eleven_monolingual_v1"
+            )
+            save(audio, audio_path)
             
-            # Additional image validation
-            np_image = np.array(self.source_image)
-            logging.info(f"Numpy image shape: {np_image.shape}, dtype: {np_image.dtype}")
+            # Generate talking avatar
+            source_image = "assets/source_image.jpg"  # Your default avatar image
+            video_data = await self.avatar_generator.generate_talking_avatar(
+                source_image=source_image,
+                audio_path=audio_path
+            )
+            
+            # Save video temporarily
+            video_path = os.path.join(self.temp_dir, 'response.mp4')
+            with open(video_path, 'wb') as f:
+                f.write(video_data)
+                
+            # Update conversation history
+            history.append((message, response_text))
+            
+            return history, video_path
+            
         except Exception as e:
-            logging.error(f"Error loading source image: {e}")
-            raise
-        
-        # Setup LivePortrait and animator
-        try:
-            self.portrait = setup_live_portrait()
-            self.animator = AvatarAnimator()
-            logging.info("LivePortrait and Animator initialized successfully")
-        except Exception as e:
-            logging.error(f"Failed to initialize LivePortrait or Animator: {e}")
-            raise
-    
-    def generate_response(self, user_input):
-        logging.info(f"Generating response for input: {user_input}")
-        # Add user input to history
-        self.history.append({"role": "user", "content": user_input})
-        
-        # Generate response using LLM
-        response = self.llm.invoke(
-            self.prompt.format(input=user_input)
-        )
-        
-        # Add response to history
-        self.history.append({"role": "assistant", "content": response})
-        
-        return response
-    
-    def text_to_speech(self, text):
-        logging.info(f"Converting text to speech: {text[:50]}...")
-        try:
-            # Try ElevenLabs first
-            audio_file = elevenlabs_text_to_speech(text)
-            if audio_file:
-                logging.info(f"ElevenLabs audio generated: {audio_file}")
-                return audio_file
+            print(f"Error generating response: {str(e)}")
+            return history, None
             
-            # Fallback to gTTS
-            from gtts import gTTS
-            tts = gTTS(text=text, lang='en')
-            tts.save("response.mp3")
-            logging.info("Fallback to gTTS: response.mp3 created")
-            return "response.mp3"
-        except Exception as e:
-            logging.error(f"TTS conversion error: {e}")
-            # Fallback to gTTS
-            from gtts import gTTS
-            tts = gTTS(text=text, lang='en')
-            tts.save("response.mp3")
-            return "response.mp3"
-    
-    def animate_response(self, text):
-        logging.info(f"Attempting to animate response for text: {text[:50]}...")
-        
-        # Analyze sentiment and generate expression parameters
-        sentiment = self.sentiment_analyzer(text)
-        expression = self.animator.generate_expression(sentiment[0])
-        logging.info(f"Generated expression: {expression}")
-        
-        # Call LivePortrait integration to generate frames
-        try:
-            frames = self.portrait.generate_animation(self.source_image, expression_params=expression)
+    def create_interface(self):
+        """Create Gradio interface"""
+        with gr.Blocks() as demo:
+            gr.Markdown("# Interactive Chat Avatar")
             
-            # Extensive frame generation debugging
-            if frames is None:
-                logging.error("generate_animation returned None!")
-                return None
-            
-            if not isinstance(frames, list):
-                logging.error(f"generate_animation did not return a list. Got: {type(frames)}")
-                return None
-            
-            logging.info(f"Number of frames returned: {len(frames)}")
-            
-            if len(frames) == 0:
-                logging.error("No frames were generated. Check your LivePortrait integration!")
-                return None
-            
-            # Convert the list of frames into a video file (animation.mp4)
-            video_path = "animation.mp4"
-            try:
-                imageio.mimsave(video_path, frames, fps=30)
-                logging.info(f"Video saved to {video_path}")
-                return video_path
-            except Exception as e:
-                logging.error(f"Error creating video: {e}")
-                return None
-        
-        except Exception as e:
-            logging.error(f"Animation generation failed: {e}")
-            return None
-
-def create_interface(source_image_path):
-    try:
-        avatar = ChatAvatar(source_image_path)
-        
-        def chat(message, history):
-            # Generate text response
-            response = avatar.generate_response(message)
-            
-            # Generate speech
-            audio_file = avatar.text_to_speech(response)
-            
-            # Generate animation
-            animation = avatar.animate_response(response)
-            
-            # Logging for debugging
-            logging.info(f"Chat response: {response}")
-            logging.info(f"Audio file: {audio_file}")
-            logging.info(f"Animation file: {animation}")
-            
-            # Return dictionary with expected keys
-            return {
-                "response": response, 
-                "audio": audio_file, 
-                "animation": animation
-            }
-        
-        # Create Gradio interface with avatar display
-        with gr.Blocks() as iface:
             with gr.Row():
                 with gr.Column(scale=2):
-                    # Explicitly set the type to "messages"
-                    chatbot = gr.Chatbot(type="messages")
-                    msg = gr.Textbox(label="Message")
-                    clear = gr.ClearButton([msg, chatbot])
+                    chatbot = gr.Chatbot()
+                    msg = gr.Textbox(placeholder="Type your message here...")
+                    clear = gr.Button("Clear")
                     
-                with gr.Column(scale=1):
-                    avatar_video = gr.Video(label="Avatar")
-                    audio_output = gr.Audio(label="Response Audio")
+                with gr.Column(scale=3):
+                    video = gr.Video(label="Avatar")
+                    
+            async def user_message(message, history):
+                if message:
+                    history, video_path = await self.generate_response(message, history)
+                    return "", history, video_path
+                return "", history, None
+                
+            msg.submit(user_message, [msg, chatbot], [msg, chatbot, video])
+            clear.click(lambda: ([], None), outputs=[chatbot, video])
             
-            msg.submit(
-                chat,
-                [msg, chatbot],
-                [chatbot, avatar_video, audio_output]
-            )
+        return demo
         
-        return iface
-    except Exception as e:
-        logging.error(f"Failed to create interface: {e}")
-        raise
-
+    def launch(self):
+        """Launch the Gradio interface"""
+        demo = self.create_interface()
+        
+        async def start_app():
+            await self.initialize()
+            demo.launch()
+            
+        asyncio.run(start_app())
+        
+    def cleanup(self):
+        """Cleanup temporary files"""
+        if os.path.exists(self.temp_dir):
+            import shutil
+            shutil.rmtree(self.temp_dir)
+            
 if __name__ == "__main__":
-    # Default source image path
-    source_image = "assets/source_image.jpg"
-    
-    # Create assets directory if it doesn't exist
-    Path("assets").mkdir(exist_ok=True)
-    
-    # Check if source image exists
-    if not Path(source_image).exists():
-        logging.error(f"Please place a source image at {source_image}")
-        print(f"Please place a source image at {source_image}")
-        print(f"Current working directory: {os.getcwd()}")
-        print(f"Contents of current directory: {os.listdir('.')}")
-        exit(1)
-    
-    interface = create_interface(source_image)
-    interface.launch(debug=True)  # Added debug mode for more verbose output
+    chat_avatar = ChatAvatar()
+    try:
+        chat_avatar.launch()
+    finally:
+        chat_avatar.cleanup()
