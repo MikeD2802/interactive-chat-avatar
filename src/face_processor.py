@@ -4,6 +4,8 @@ import mediapipe as mp
 from PIL import Image
 import torch
 import math
+from expression_controller import ExpressionController
+import time
 
 class FaceProcessor:
     def __init__(self):
@@ -14,6 +16,9 @@ class FaceProcessor:
             min_detection_confidence=0.5,
             min_tracking_confidence=0.5
         )
+        
+        # Initialize expression controller
+        self.expression_controller = ExpressionController()
         
         # Initialize smooth buffers for landmark stabilization
         self.smooth_factor = 0.5
@@ -28,6 +33,10 @@ class FaceProcessor:
         # Gaze correction parameters
         self.gaze_correction = True
         self.gaze_threshold = 0.3
+        
+        # Expression parameters
+        self.expression_blend_factor = 0.7
+        self.expression_transition_speed = 0.3
         
     def detect_face(self, image):
         """Detect facial landmarks in an image."""
@@ -94,10 +103,13 @@ class FaceProcessor:
         mask = np.zeros(image.shape[:2], dtype=np.uint8)
         face_points = points[self.FACE_OVAL]
         cv2.fillPoly(mask, [face_points.astype(int)], 255)
+        
+        # Feather the edges
+        mask = cv2.GaussianBlur(mask, (31, 31), 11)
         return mask
         
-    def process_frame(self, frame):
-        """Process a single frame."""
+    def process_frame(self, frame, sentiment=None):
+        """Process a single frame with expressions."""
         try:
             # Detect face landmarks
             points = self.detect_face(frame)
@@ -107,21 +119,31 @@ class FaceProcessor:
             # Apply gaze correction
             points = self.correct_gaze(points)
             
+            # Update expression controller
+            expression_state = self.expression_controller.update(
+                time.time(),
+                sentiment=sentiment
+            )
+            
+            # Apply expressions to landmarks
+            points = self.expression_controller.apply_expression(points)
+            
             # Generate face mask
             mask = self.get_face_mask(frame, points)
             
             return {
                 'landmarks': points,
                 'mask': mask,
-                'face_detected': True
+                'face_detected': True,
+                'expression_state': expression_state
             }
             
         except Exception as e:
             print(f"Error processing frame: {e}")
             return None
             
-    def animate_frame(self, source_image, target_points):
-        """Animate source image using target points."""
+    def animate_frame(self, source_image, target_points, sentiment=None):
+        """Animate source image using target points and expressions."""
         try:
             if isinstance(source_image, str):
                 source_image = cv2.imread(source_image)
@@ -130,6 +152,15 @@ class FaceProcessor:
             if source_points is None:
                 return None
                 
+            # Update expression controller
+            expression_state = self.expression_controller.update(
+                time.time(),
+                sentiment=sentiment
+            )
+            
+            # Apply expressions to source points
+            source_points = self.expression_controller.apply_expression(source_points)
+            
             # Calculate transformation
             transform = cv2.estimateAffinePartial2D(
                 source_points.astype(np.float32),
@@ -147,21 +178,51 @@ class FaceProcessor:
                 borderMode=cv2.BORDER_REPLICATE
             )
             
-            # Blend using face mask
-            mask = self.get_face_mask(source_image, source_points)
-            mask = cv2.warpAffine(
-                mask,
+            # Generate and transform masks
+            source_mask = self.get_face_mask(source_image, source_points)
+            warped_mask = cv2.warpAffine(
+                source_mask,
                 transform,
                 (source_image.shape[1], source_image.shape[0])
             )
             
-            mask = cv2.GaussianBlur(mask, (19, 19), 0)
-            mask = mask.astype(float) / 255.0
-            mask = np.expand_dims(mask, axis=-1)
+            # Apply expression blending
+            if expression_state['expression'] != 'neutral':
+                blend_factor = expression_state['expression_blend'] * self.expression_blend_factor
+                animated = self._blend_expression(animated, source_image, blend_factor)
             
-            result = animated * mask + source_image * (1 - mask)
-            return result.astype(np.uint8)
+            # Blend using face mask
+            warped_mask = warped_mask.astype(float) / 255.0
+            warped_mask = np.expand_dims(warped_mask, axis=-1)
+            
+            result = animated * warped_mask + source_image * (1 - warped_mask)
+            result = result.astype(np.uint8)
+            
+            # Add final enhancements
+            result = self._enhance_output(result)
+            
+            return result
             
         except Exception as e:
             print(f"Error animating frame: {e}")
             return None
+            
+    def _blend_expression(self, animated, source, blend_factor):
+        """Blend between neutral and expressive face."""
+        return cv2.addWeighted(animated, blend_factor, source, 1 - blend_factor, 0)
+        
+    def _enhance_output(self, image):
+        """Apply final enhancements to the output image."""
+        # Adjust contrast
+        lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
+        cl = clahe.apply(l)
+        enhanced = cv2.merge((cl,a,b))
+        enhanced = cv2.cvtColor(enhanced, cv2.COLOR_LAB2BGR)
+        
+        # Apply subtle sharpening
+        kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]]) / 9.0
+        enhanced = cv2.filter2D(enhanced, -1, kernel)
+        
+        return enhanced
