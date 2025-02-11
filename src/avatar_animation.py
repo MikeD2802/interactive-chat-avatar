@@ -11,15 +11,7 @@ class AvatarAnimator:
         )
     
     def generate_expression(self, sentiment):
-        """
-        Generate expression parameters based on sentiment analysis
-        
-        Args:
-            sentiment (dict): Sentiment analysis result from Hugging Face pipeline
-        
-        Returns:
-            dict: Expression parameters for animation
-        """
+        """Generate expression parameters based on sentiment analysis"""
         # Map sentiment to expression parameters
         if sentiment['label'] == 'POSITIVE':
             # More positive sentiment leads to more intense smile

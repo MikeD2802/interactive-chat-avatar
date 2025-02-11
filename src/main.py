@@ -37,7 +37,7 @@ class ChatAvatar:
         self.source_image = Image.open(source_image_path)
         
         # Initialize sentiment analyzer for expressions
-        self.animator = AvatarAnimator(sentiment_analyzer=self.sentiment_analyzer)
+        self.animator = AvatarAnimator()
     
     def generate_response(self, user_input):
         # Add user input to history
