@@ -21,8 +21,8 @@ class ChatAvatar:
         
         # Define avatar personality prompt
         self.prompt = ChatPromptTemplate.from_messages([
-            ("system", "You are a helpful and friendly AI assistant. Respond naturally and conversationally."),
-            ("user", "{input}")
+            (\"system\", \"You are a helpful and friendly AI assistant. Respond naturally and conversationally.\"),
+            (\"user\", \"{input}\")
         ])
         
         # Load and setup LivePortrait
@@ -34,7 +34,7 @@ class ChatAvatar:
     
     def generate_response(self, user_input):
         # Add user input to history
-        self.history.append({"role": "user", "content": user_input})
+        self.history.append({\"role\": \"user\", \"content\": user_input})
         
         # Generate response using LLM
         response = self.llm.invoke(
@@ -42,15 +42,15 @@ class ChatAvatar:
         )
         
         # Add response to history
-        self.history.append({"role": "assistant", "content": response})
+        self.history.append({\"role\": \"assistant\", \"content\": response})
         
         return response
     
     def text_to_speech(self, text):
         # Convert text to speech
         tts = gTTS(text=text, lang='en')
-        tts.save("response.mp3")
-        return "response.mp3"
+        tts.save(\"response.mp3\")
+        return \"response.mp3\"
     
     def animate_response(self, text):
         # Analyze sentiment and generate expression parameters
@@ -79,22 +79,22 @@ def create_interface(source_image_path):
         animation = avatar.animate_response(response)
         
         return {
-            "response": response,
-            "audio": audio_file,
-            "animation": animation
+            \"response\": response,
+            \"audio\": audio_file,
+            \"animation\": animation
         }
     
     # Create Gradio interface with avatar display
     with gr.Blocks() as iface:
         with gr.Row():
             with gr.Column(scale=2):
-                chatbot = gr.Chatbot()
-                msg = gr.Textbox(label="Message")
+                chatbot = gr.Chatbot(type=\"messages\")  # Updated to use 'messages' type
+                msg = gr.Textbox(label=\"Message\")
                 clear = gr.ClearButton([msg, chatbot])
                 
             with gr.Column(scale=1):
-                avatar_video = gr.Video(label="Avatar")
-                audio_output = gr.Audio(label="Response Audio")
+                avatar_video = gr.Video(label=\"Avatar\")
+                audio_output = gr.Audio(label=\"Response Audio\")
         
         msg.submit(
             chat,
@@ -104,16 +104,16 @@ def create_interface(source_image_path):
     
     return iface
 
-if __name__ == "__main__":
+if __name__ == \"__main__\":
     # Default source image path
-    source_image = "assets/source_image.jpg"
+    source_image = \"assets/source_image.jpg\"
     
     # Create assets directory if it doesn't exist
-    Path("assets").mkdir(exist_ok=True)
+    Path(\"assets\").mkdir(exist_ok=True)
     
     # Check if source image exists
     if not Path(source_image).exists():
-        print(f"Please place a source image at {source_image}")
+        print(f\"Please place a source image at {source_image}\")
         exit(1)
     
     interface = create_interface(source_image)
