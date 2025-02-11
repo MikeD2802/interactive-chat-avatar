@@ -1,18 +1,15 @@
 import os
 from dotenv import load_dotenv
-
-# Load environment variables from .env file
 load_dotenv()
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import OllamaLLM
 import gradio as gr
-import json
 from pathlib import Path
 from PIL import Image
 import numpy as np
 from transformers import pipeline
-import imageio  # Ensure this is imported at the top
+import imageio  # make sure this import is at the top
 
 from avatar_animation import AvatarAnimator
 from live_portrait_integration import setup_live_portrait
@@ -97,6 +94,7 @@ class ChatAvatar:
         # Call LivePortrait integration to generate frames
         frames = self.portrait.generate_animation(self.source_image, expression_params=expression)
         
+        # Debug checks for frame generation
         if frames is None:
             print("generate_animation returned None!")
             return None
