@@ -1,229 +1,163 @@
-import os
 import gradio as gr
-import asyncio
+from langchain_ollama import OllamaLLM
+from real_time_animation import RealTimeAnimator
+import cv2
+import numpy as np
+from transformers import pipeline
+import os
+import imageio
 import tempfile
-from pathlib import Path
-from avatar_generator import AvatarGenerator
-from elevenlabs import generate, save, voices, Voice
-import ollama
+from elevenlabs import generate
+from dotenv import load_dotenv
 
-class EnhancedChatAvatar:
-    def __init__(self):
-        self.avatar_generator = AvatarGenerator()
-        self.conversation_history = []
-        self.temp_dir = tempfile.mkdtemp()
-        self.elevenlabs_voice_id = None
-        self.voice_list = None
+class ChatAvatar:
+    def __init__(self, source_image_path):
+        # Load environment variables
+        load_dotenv()
         
-    async def initialize(self):
-        """Initialize all required components"""
-        await self.avatar_generator.initialize()
-        self.llm = ollama.Client()
-        await self.llm.pull('llama2')
+        # Initialize LLM
+        self.llm = OllamaLLM(model="llama2")
         
-    async def get_elevenlabs_voices(self, api_key):
-        """Fetch available voices from ElevenLabs"""
+        # Initialize sentiment analyzer
+        self.sentiment_analyzer = pipeline(
+            "sentiment-analysis",
+            model="distilbert-base-uncased-finetuned-sst-2-english",
+            revision="714eb0f"
+        )
+        
+        # Initialize real-time animator
+        self.animator = RealTimeAnimator()
+        self.source_image_path = source_image_path
+        
+        # Verify source image exists
+        if not os.path.exists(source_image_path):
+            raise FileNotFoundError(f"Source image not found: {source_image_path}")
+            
+        print(f"Initialized ChatAvatar with source image: {source_image_path}")
+        
+    def generate_response(self, message):
+        """Generate a response using the LLM."""
         try:
-            os.environ["ELEVEN_API_KEY"] = api_key
-            available_voices = voices()
-            voice_names = [(voice.voice_id, voice.name) for voice in available_voices]
-            return voice_names, "✓ API Key valid. Voices loaded."
+            response = self.llm.invoke(message)
+            print(f"Generated response: {response}")
+            return response
         except Exception as e:
-            return [], f"✗ Error: {str(e)}"
+            print(f"Error generating response: {e}")
+            return "I apologize, but I'm having trouble generating a response."
             
-    async def generate_response(self, 
-                              message, 
-                              history, 
-                              voice_id, 
-                              expression_intensity,
-                              head_movement,
-                              enhance_quality):
-        """Generate LLM response and avatar animation with customizations"""
+    def text_to_speech(self, text):
+        """Convert text to speech using ElevenLabs."""
         try:
-            # Get LLM response
-            response = await self.llm.generate('llama2', prompt=message)
-            response_text = response['response']
-            
-            # Generate speech using selected ElevenLabs voice
-            audio_path = os.path.join(self.temp_dir, 'response.wav')
+            api_key = os.getenv('ELEVENLABS_API_KEY')
+            if not api_key:
+                raise ValueError("ElevenLabs API key not found")
+                
             audio = generate(
-                text=response_text,
-                voice=voice_id,
-                model="eleven_monolingual_v1"
-            )
-            save(audio, audio_path)
-            
-            # Generate talking avatar with custom parameters
-            source_image = "assets/source_image.jpg"  # Default avatar image
-            video_data = await self.avatar_generator.generate_talking_avatar(
-                source_image=source_image,
-                audio_path=audio_path,
-                config={
-                    'exp_scale': float(expression_intensity),
-                    'pose_style': float(head_movement),
-                    'use_enhancer': enhance_quality
-                }
+                text=text,
+                api_key=api_key,
+                voice="Rachel"
             )
             
-            # Save video temporarily
-            video_path = os.path.join(self.temp_dir, 'response.mp4')
-            with open(video_path, 'wb') as f:
-                f.write(video_data)
+            # Save audio to temporary file
+            with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_audio:
+                temp_audio.write(audio)
+                return temp_audio.name
                 
-            # Update conversation history
-            history.append((message, response_text))
+        except Exception as e:
+            print(f"Error generating speech: {e}")
+            return None
             
-            return history, video_path, "Generation completed successfully!"
+    def animate_response(self, text):
+        """Generate animated response with real-time facial animation."""
+        try:
+            # Load source image
+            source_image = cv2.imread(self.source_image_path)
+            if source_image is None:
+                raise ValueError(f"Failed to load source image: {self.source_image_path}")
+                
+            print(f"Loaded source image with shape: {source_image.shape}")
+            
+            # Generate frames with facial animation
+            frames = []
+            cap = cv2.VideoCapture(0)  # Use webcam for demonstration
+            
+            frame_count = 0
+            while frame_count < 30:  # Generate 30 frames
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                    
+                # Process frame to get facial landmarks
+                landmarks = self.animator.process_frame(frame)
+                if landmarks is not None:
+                    # Animate source image using landmarks
+                    animated_frame = self.animator.animate_frame(source_image, landmarks)
+                    if animated_frame is not None:
+                        frames.append(animated_frame)
+                        frame_count += 1
+                        
+            cap.release()
+            
+            if not frames:
+                print("No frames were generated")
+                return None
+                
+            # Save frames as video
+            output_path = "animation.mp4"
+            imageio.mimsave(output_path, frames, fps=30)
+            print(f"Saved animation to: {output_path}")
+            return output_path
             
         except Exception as e:
-            error_msg = f"Error generating response: {str(e)}"
-            print(error_msg)
-            return history, None, error_msg
+            print(f"Error in animate_response: {e}")
+            return None
+
+def create_interface():
+    """Create the Gradio interface."""
+    avatar = ChatAvatar("assets/source_image.jpg")
+    
+    def chat(message, history):
+        """Handle chat messages and generate responses."""
+        try:
+            # Generate response
+            response = avatar.generate_response(message)
             
-    def create_interface(self):
-        """Create enhanced Gradio interface"""
-        with gr.Blocks(theme=gr.themes.Soft()) as demo:
-            # Header
-            with gr.Row():
-                gr.Markdown("# 🤖 Enhanced AI Avatar Chat")
-                
-            # API Key Setup
-            with gr.Row():
-                with gr.Column():
-                    api_key_input = gr.Textbox(
-                        label="ElevenLabs API Key",
-                        type="password",
-                        placeholder="Enter your API key here..."
-                    )
-                    voice_dropdown = gr.Dropdown(
-                        label="Select Voice",
-                        choices=[],
-                        interactive=True
-                    )
-                    api_status = gr.Markdown("Enter API key to load voices")
-                    
-            # Main Interface
-            with gr.Row():
-                # Left Column - Chat Interface
-                with gr.Column(scale=2):
-                    chatbot = gr.Chatbot(
-                        height=500,
-                        show_label=False,
-                        container=True,
-                        bubble_full_width=False
-                    )
-                    with gr.Row():
-                        msg = gr.Textbox(
-                            placeholder="Type your message here...",
-                            scale=8,
-                            container=False
-                        )
-                        submit_btn = gr.Button(
-                            "Send",
-                            scale=1,
-                            variant="primary"
-                        )
-                        
-                # Right Column - Avatar and Controls
-                with gr.Column(scale=3):
-                    video = gr.Video(label="Avatar Animation")
-                    with gr.Row():
-                        expression_slider = gr.Slider(
-                            minimum=0.5,
-                            maximum=1.5,
-                            value=1.0,
-                            step=0.1,
-                            label="Expression Intensity"
-                        )
-                        head_movement_slider = gr.Slider(
-                            minimum=0,
-                            maximum=2,
-                            value=1,
-                            step=0.1,
-                            label="Head Movement"
-                        )
-                    with gr.Row():
-                        enhance_checkbox = gr.Checkbox(
-                            label="Enhance Quality",
-                            value=True,
-                            info="Uses GFPGAN to improve output quality"
-                        )
-                    status_text = gr.Markdown("System ready")
-                    
-            # Footer Controls
-            with gr.Row():
-                clear_btn = gr.Button("Clear Chat", variant="secondary")
-                example_btn = gr.Button("Load Example", variant="secondary")
-                
-            # Event handlers
-            async def update_voices(api_key):
-                voices, message = await self.get_elevenlabs_voices(api_key)
-                return {
-                    voice_dropdown: gr.Dropdown(choices=voices),
-                    api_status: message
-                }
-                
-            api_key_input.change(
-                update_voices,
-                inputs=[api_key_input],
-                outputs=[voice_dropdown, api_status]
-            )
+            # Generate speech
+            audio_file = avatar.text_to_speech(response)
             
-            async def process_message(message, history, voice_id, exp, head, enhance):
-                if not message.strip():
-                    return history, None, "Please enter a message"
-                    
-                return await self.generate_response(
-                    message, history, voice_id,
-                    exp, head, enhance
-                )
-                
-            submit_btn.click(
-                process_message,
-                inputs=[
-                    msg, chatbot, voice_dropdown,
-                    expression_slider, head_movement_slider,
-                    enhance_checkbox
-                ],
-                outputs=[chatbot, video, status_text],
-                api_name="chat"
-            )
+            # Generate animation
+            animation = avatar.animate_response(response)
             
-            clear_btn.click(
-                lambda: ([], None, "Chat cleared"),
-                outputs=[chatbot, video, status_text]
-            )
+            print(f"Response: {response}")
+            print(f"Audio file: {audio_file}")
+            print(f"Animation file: {animation}")
             
-            example_btn.click(
-                lambda: (
-                    [["Hello!", "Hi! How can I help you today?"]],
-                    None,
-                    "Example loaded"
-                ),
-                outputs=[chatbot, video, status_text]
-            )
+            return {
+                "response": response,
+                "audio": audio_file,
+                "animation": animation
+            }
             
-        return demo
+        except Exception as e:
+            print(f"Error in chat function: {e}")
+            return {
+                "response": "I apologize, but I encountered an error.",
+                "audio": None,
+                "animation": None
+            }
+    
+    with gr.Blocks() as demo:
+        chatbot = gr.Chatbot(type="messages")
+        video = gr.Video()
+        audio = gr.Audio()
         
-    def launch(self):
-        """Launch the Gradio interface"""
-        demo = self.create_interface()
+        msg = gr.Textbox()
+        send = gr.Button("Send")
         
-        async def start_app():
-            await self.initialize()
-            demo.launch(share=True)
-            
-        asyncio.run(start_app())
+        send.click(chat, [msg, chatbot], [chatbot, video, audio])
         
-    def cleanup(self):
-        """Cleanup temporary files"""
-        if os.path.exists(self.temp_dir):
-            import shutil
-            shutil.rmtree(self.temp_dir)
-            
+    return demo
+
 if __name__ == "__main__":
-    chat_avatar = EnhancedChatAvatar()
-    try:
-        chat_avatar.launch()
-    finally:
-        chat_avatar.cleanup()
+    demo = create_interface()
+    demo.launch(debug=True)
