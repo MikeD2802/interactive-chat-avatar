@@ -10,8 +10,12 @@ ollama>=0.1.0
 Pillow>=10.0.0
 pyyaml>=6.0.1
 huggingface_hub[cli]>=0.20.3
-imageio>=2.31.0  # Added for video generation
-imageio-ffmpeg>=0.4.8  # Optional but recommended for imageio
+imageio>=2.31.0
+imageio-ffmpeg>=0.4.8
+
+# TTS Dependencies
+elevenlabs-mcp-server==0.1.1
+python-dotenv>=1.0.0  # For environment variable management
 
 # Scientific computing and ML
 scipy>=1.12.0,<1.14.0
