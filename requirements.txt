@@ -10,15 +10,10 @@ ollama>=0.1.0
 Pillow>=10.0.0
 pyyaml>=6.0.1
 huggingface_hub[cli]>=0.20.3
+imageio>=2.31.0  # Added for video generation
+imageio-ffmpeg>=0.4.8  # Optional but recommended for imageio
 
-# For macOS with Homebrew, install OpenBLAS first:
-# brew install openblas
-# Then set these environment variables:
-# export OPENBLAS=$(brew --prefix openblas)
-# export CFLAGS="-I$OPENBLAS/include"
-# export LDFLAGS="-L$OPENBLAS/lib"
-
-# Scientific computing (may require additional setup)
+# Scientific computing and ML
 scipy>=1.12.0,<1.14.0
 opencv-python>=4.7.0.72
 
