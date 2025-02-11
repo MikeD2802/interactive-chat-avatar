@@ -1,25 +1,20 @@
 import gradio as gr
-import logging
-import numpy as np
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_ollama import Ollama
+from langchain_ollama import OllamaLLM  # Updated import
 from gtts import gTTS
 import os
 import json
 from pathlib import Path
 from PIL import Image
+import numpy as np
 
 from avatar_animation import AvatarAnimator
-from live_portrait_integration import setup_live_portrait, generate_avatar_animation
-
-# Configure logging
-logging.basicConfig(level=logging.INFO, 
-                    format='%(asctime)s - %(levelname)s - %(message)s')
+from live_portrait_integration import setup_live_portrait
 
 class ChatAvatar:
     def __init__(self, source_image_path):
         # Initialize Ollama LLM
-        self.llm = Ollama(model="llama2")
+        self.llm = OllamaLLM(model="llama2")
         
         # Initialize conversation history
         self.history = []
@@ -31,18 +26,8 @@ class ChatAvatar:
         ])
         
         # Load and setup LivePortrait
-        try:
-            self.portrait = setup_live_portrait()
-        except Exception as e:
-            logging.warning(f"Could not setup LivePortrait: {e}")
-            self.portrait = None
-        
-        # Load source image
-        try:
-            self.source_image = Image.open(source_image_path)
-        except Exception as e:
-            logging.error(f"Failed to load source image: {e}")
-            self.source_image = None
+        self.portrait = setup_live_portrait()
+        self.source_image = Image.open(source_image_path)
         
         # Initialize sentiment analyzer for expressions
         self.animator = AvatarAnimator()
@@ -63,38 +48,22 @@ class ChatAvatar:
     
     def text_to_speech(self, text):
         # Convert text to speech
-        try:
-            tts = gTTS(text=text, lang='en')
-            tts.save("response.mp3")
-            return "response.mp3"
-        except Exception as e:
-            logging.error(f"Text-to-speech conversion failed: {e}")
-            return None
+        tts = gTTS(text=text, lang='en')
+        tts.save("response.mp3")
+        return "response.mp3"
     
     def animate_response(self, text):
-        # If portrait or source image is not available, return placeholder
-        if self.source_image is None or self.portrait is None:
-            # Generate a simple black and white grid as a placeholder
-            return np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
-        
         # Analyze sentiment and generate expression parameters
-        try:
-            sentiment = self.animator.analyze_sentiment(text)
-            expression = self.animator.generate_expression(sentiment)
-            
-            # Generate animation using LivePortrait
-            frames = generate_avatar_animation(
-                self.portrait, 
-                self.source_image, 
-                expression_params=expression
-            )
-            
-            return frames if frames is not None else np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
+        sentiment = self.animator.analyze_sentiment(text)
+        expression = self.animator.generate_expression(sentiment)
         
-        except Exception as e:
-            logging.error(f"Avatar animation generation failed: {e}")
-            # Return a random image as a fallback
-            return np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
+        # Generate animation using LivePortrait
+        frames = self.portrait.generate_animation(
+            self.source_image,
+            expression_params=expression
+        )
+        
+        return frames
 
 def create_interface(source_image_path):
     avatar = ChatAvatar(source_image_path)
@@ -108,9 +77,6 @@ def create_interface(source_image_path):
         
         # Generate animation
         animation = avatar.animate_response(response)
-        
-        # Ensure fallback for None values
-        audio_file = audio_file or ''
         
         return {
             "response": response,
@@ -148,10 +114,7 @@ if __name__ == "__main__":
     # Check if source image exists
     if not Path(source_image).exists():
         print(f"Please place a source image at {source_image}")
-        print("Generating a random placeholder image...")
-        # Create a random image as a placeholder
-        random_image = np.random.randint(0, 256, (300, 300, 3), dtype=np.uint8)
-        Image.fromarray(random_image).save(source_image)
+        exit(1)
     
     interface = create_interface(source_image)
-    interface.launch(debug=True)
+    interface.launch()
