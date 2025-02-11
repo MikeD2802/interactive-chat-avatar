@@ -2,13 +2,35 @@ import sys
 import os
 import logging
 
+# Debugging: Print Python path
+print("Python Path:", sys.path)
+
 # Add LivePortrait directory to Python path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 liveportrait_path = os.path.join(project_root, 'LivePortrait')
 sys.path.insert(0, liveportrait_path)
 
+# Debugging: List contents of LivePortrait directory
+print("LivePortrait Directory Contents:", os.listdir(liveportrait_path))
+
 try:
-    from portrait.live_portrait import LivePortrait
+    # Try different import strategies
+    try:
+        from portrait.live_portrait import LivePortrait
+    except ImportError:
+        try:
+            from LivePortrait.portrait.live_portrait import LivePortrait
+        except ImportError:
+            # Fallback import attempt
+            import importlib.util
+            spec = importlib.util.spec_from_file_location(
+                "LivePortrait", 
+                os.path.join(liveportrait_path, "portrait", "live_portrait.py")
+            )
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            LivePortrait = module.LivePortrait
+
     import torch
     import numpy as np
     from PIL import Image
@@ -34,6 +56,9 @@ try:
         
         except Exception as e:
             logging.error(f"Failed to initialize LivePortrait: {e}")
+            # Print detailed error information
+            import traceback
+            traceback.print_exc()
             return None
 
     def generate_avatar_animation(model, source_image, expression_params=None):
@@ -64,6 +89,9 @@ try:
         
         except Exception as e:
             logging.error(f"Failed to generate avatar animation: {e}")
+            # Print detailed error information
+            import traceback
+            traceback.print_exc()
             return None
 
 except ImportError as e:
@@ -71,6 +99,9 @@ except ImportError as e:
     
     def setup_live_portrait():
         logging.error("LivePortrait is not available")
+        # Print detailed import error information
+        import traceback
+        traceback.print_exc()
         return None
     
     def generate_avatar_animation(*args, **kwargs):
