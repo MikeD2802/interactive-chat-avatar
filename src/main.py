@@ -1,6 +1,6 @@
 import gradio as gr
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_community.llms import Ollama
+from langchain_ollama import Ollama  # Updated import
 from gtts import gTTS
 import os
 import json
