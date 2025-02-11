@@ -8,7 +8,7 @@ from pathlib import Path
 from PIL import Image
 import numpy as np
 from transformers import pipeline
-import imageio  # Add this at the top if not already imported
+import imageio  # Added imageio import
 
 from avatar_animation import AvatarAnimator
 from live_portrait_integration import setup_live_portrait
