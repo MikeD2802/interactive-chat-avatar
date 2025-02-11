@@ -2,11 +2,12 @@ from transformers import pipeline
 import numpy as np
 
 class AvatarAnimator:
-    def __init__(self, sentiment_analyzer=None):
-        # Use provided sentiment analyzer or create a default one
-        self.sentiment_analyzer = sentiment_analyzer or pipeline(
-            "sentiment-analysis", 
-            model="distilbert-base-uncased-finetuned-sst-2-english"
+    def __init__(self):
+        # Initialize sentiment analysis with an explicit model
+        self.sentiment_analyzer = pipeline(
+            "sentiment-analysis",
+            model="distilbert-base-uncased-finetuned-sst-2-english",
+            revision="714eb0f"
         )
     
     def generate_expression(self, sentiment):
