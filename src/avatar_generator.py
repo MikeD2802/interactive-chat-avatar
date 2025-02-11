@@ -3,7 +3,7 @@ import sys
 import torch
 import tempfile
 from pathlib import Path
-from src.utils.download import download_model
+from src.utils.download import download_model, download_model_from_url
 
 class AvatarGenerator:
     def __init__(self, checkpoint_path=None):
@@ -12,33 +12,55 @@ class AvatarGenerator:
         self.temp_dir = tempfile.mkdtemp()
         self.initialized = False
         self.default_config = {
+            'face_model_size': 512,    # 256 or 512
             'exp_scale': 1.0,
             'pose_style': 1.0,
             'use_enhancer': True,
             'batch_size': 1,
-            'size': 256,
+            'size': 512,
             'still_mode': False,
-            'use_ref_video': False
+            'use_ref_video': False,
+            'use_full_body': False,    # Full body mode
+            'preload': True,           # Preload models
+            'use_safetensor': True,    # Use safetensor models
         }
         
     async def initialize(self):
         if self.initialized:
             return
             
-        # Download models if they don't exist
-        if not os.path.exists(self.checkpoint_path):
-            os.makedirs(self.checkpoint_path, exist_ok=True)
-            await download_model('sadtalker')
-            
+        # Create checkpoint directory
+        os.makedirs(self.checkpoint_path, exist_ok=True)
+        
+        # Download required models
+        model_urls = {
+            'sadtalker_512': 'https://github.com/OpenTalker/SadTalker/releases/download/v0.0.2/SadTalker_V0.0.2_512.safetensors',
+            'sadtalker_256': 'https://github.com/OpenTalker/SadTalker/releases/download/v0.0.2/SadTalker_V0.0.2_256.safetensors',
+            'mapping_00229': 'https://github.com/OpenTalker/SadTalker/releases/download/v0.0.2/mapping_00229-model.pth.tar',
+            'mapping_00109': 'https://github.com/OpenTalker/SadTalker/releases/download/v0.0.2/mapping_00109-model.pth.tar',
+        }
+        
+        for model_name, url in model_urls.items():
+            model_path = os.path.join(self.checkpoint_path, os.path.basename(url))
+            if not os.path.exists(model_path):
+                await download_model_from_url(url, model_path)
+        
         # Import SadTalker modules
         sys.path.append('src/SadTalker')
         from src.face3d.models.facerecon_model import FaceReconModel
         from src.generate_batch import SadTalker
         
+        # Initialize SadTalker with enhanced options
         self.sad_talker = SadTalker(
             checkpoint_path=self.checkpoint_path,
-            device=self.device
+            device=self.device,
+            use_safetensor=self.default_config['use_safetensor'],
+            face_model_size=self.default_config['face_model_size']
         )
+        
+        if self.default_config['preload']:
+            await self.preload_models()
+            
         self.initialized = True
         
     def prepare_config(self, config=None):
@@ -46,13 +68,16 @@ class AvatarGenerator:
         if config is None:
             return self.default_config
             
-        return {
-            **self.default_config,
-            **config
-        }
+        merged_config = {**self.default_config, **config}
+        
+        # Validate face model size
+        if merged_config['face_model_size'] not in [256, 512]:
+            merged_config['face_model_size'] = 512
+            
+        return merged_config
         
     async def generate_talking_avatar(self, source_image, audio_path=None, text=None, config=None):
-        """Generate a talking avatar video with customization options"""
+        """Generate a talking avatar video with enhanced features"""
         if not self.initialized:
             await self.initialize()
             
@@ -71,7 +96,7 @@ class AvatarGenerator:
         else:
             source_path = source_image
             
-        # Generate video with customizations
+        # Generate video with enhanced features
         try:
             result = await self.sad_talker.animate(
                 source_path=source_path,
@@ -84,7 +109,9 @@ class AvatarGenerator:
                 size=full_config['size'],
                 pose_style=full_config['pose_style'],
                 exp_scale=full_config['exp_scale'],
-                use_ref_video=full_config['use_ref_video']
+                use_ref_video=full_config['use_ref_video'],
+                use_full_body=full_config['use_full_body'],
+                face_model_size=full_config['face_model_size']
             )
             
             # Read the generated video
@@ -109,9 +136,23 @@ class AvatarGenerator:
         if not self.initialized:
             await self.initialize()
             
-        # Preload face recognition model
+        # Preload face recognition and other models
         if hasattr(self.sad_talker, 'preload'):
             await self.sad_talker.preload()
+            
+    def get_available_sizes(self):
+        """Return available face model sizes"""
+        return [256, 512]
+        
+    def get_available_features(self):
+        """Return available features and their descriptions"""
+        return {
+            'still_mode': 'Reduce head movement',
+            'use_enhancer': 'Enhance face quality',
+            'use_full_body': 'Generate full body animation',
+            'use_ref_video': 'Use reference video for motion',
+            'face_model_size': 'Size of face model (256 or 512)',
+        }
                 
     def __del__(self):
         """Cleanup temporary directory on object destruction"""
