@@ -99,9 +99,15 @@ def create_interface(source_image_path):
         # Generate animation
         animation = avatar.animate_response(response)
         
+        # Print debug information
+        print("Response:", response)
+        print("Audio file:", audio_file)
+        print("Animation file:", animation)
+        
+        # Return dictionary with expected keys
         return {
-            "response": response,
-            "audio": audio_file,
+            "response": response, 
+            "audio": audio_file, 
             "animation": animation
         }
     
