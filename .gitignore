@@ -1,0 +1,32 @@
+# Virtual environment
+venv/
+.venv/
+env/
+.env/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment variables
+.env
+*.env
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Project-specific
+animation.mp4
+response.mp3
+
+# Ignore LivePortrait and other large directories
+LivePortrait/
+pretrained_weights/
