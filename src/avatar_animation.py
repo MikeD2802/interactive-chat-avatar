@@ -1,44 +1,43 @@
 from transformers import pipeline
-import torch
 import numpy as np
 
 class AvatarAnimator:
-    def __init__(self):
-        # Initialize sentiment analysis for expression control
-        self.sentiment_analyzer = pipeline("sentiment-analysis")
-        
-        # Placeholder for LivePortrait model
-        self.portrait_model = None
-        self.load_portrait_model()
-    
-    def load_portrait_model(self):
-        # This would be replaced with actual LivePortrait model initialization
-        # You would need to follow KwaiVGI's specific setup instructions
-        pass
-    
-    def analyze_sentiment(self, text):
-        result = self.sentiment_analyzer(text)
-        return result[0]
+    def __init__(self, sentiment_analyzer=None):
+        # Use provided sentiment analyzer or create a default one
+        self.sentiment_analyzer = sentiment_analyzer or pipeline(
+            "sentiment-analysis", 
+            model="distilbert-base-uncased-finetuned-sst-2-english"
+        )
     
     def generate_expression(self, sentiment):
-        # This would use the LivePortrait model to generate appropriate expressions
-        # Based on the sentiment of the response
-        expression_params = {
-            'smile': sentiment['label'] == 'POSITIVE',
-            'intensity': abs(sentiment['score'])
-        }
-        return expression_params
-    
-    def animate(self, text):
-        # Analyze the sentiment of the response
-        sentiment = self.analyze_sentiment(text)
+        """
+        Generate expression parameters based on sentiment analysis
         
-        # Generate appropriate expression
-        expression = self.generate_expression(sentiment)
+        Args:
+            sentiment (dict): Sentiment analysis result from Hugging Face pipeline
         
-        # This would use the LivePortrait model to generate the animation
-        # Return the animation frames or stream for the UI
-        return expression
-
-def setup_animator():
-    return AvatarAnimator()
+        Returns:
+            dict: Expression parameters for animation
+        """
+        # Map sentiment to expression parameters
+        if sentiment['label'] == 'POSITIVE':
+            # More positive sentiment leads to more intense smile
+            smile_intensity = sentiment['score'] * 0.8  # Scale smile intensity
+            return {
+                'smile': True,
+                'intensity': smile_intensity,
+                'pose': {
+                    'head_pitch': np.random.uniform(-0.1, 0.1),  # Slight head tilt
+                    'head_yaw': np.random.uniform(-0.05, 0.05)   # Subtle head turn
+                }
+            }
+        else:
+            # Neutral or negative sentiment
+            return {
+                'smile': False,
+                'intensity': 0.2,  # Minimal expression
+                'pose': {
+                    'head_pitch': np.random.uniform(-0.05, 0.05),
+                    'head_yaw': 0
+                }
+            }
