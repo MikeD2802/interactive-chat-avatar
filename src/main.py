@@ -1,8 +1,12 @@
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import OllamaLLM
 import gradio as gr
-from gtts import gTTS
-import os
 import json
 from pathlib import Path
 from PIL import Image
@@ -12,6 +16,7 @@ import imageio  # Ensure this is imported at the top
 
 from avatar_animation import AvatarAnimator
 from live_portrait_integration import setup_live_portrait
+from src.elevenlabs_tts import elevenlabs_text_to_speech
 
 class ChatAvatar:
     def __init__(self, source_image_path):
@@ -61,10 +66,24 @@ class ChatAvatar:
         return response
     
     def text_to_speech(self, text):
-        # Convert text to speech
-        tts = gTTS(text=text, lang='en')
-        tts.save("response.mp3")
-        return "response.mp3"
+        # Convert text to speech using ElevenLabs MCP server
+        try:
+            audio_file = elevenlabs_text_to_speech(text)
+            if audio_file:
+                return audio_file
+            
+            # Fallback to gTTS if ElevenLabs fails
+            from gtts import gTTS
+            tts = gTTS(text=text, lang='en')
+            tts.save("response.mp3")
+            return "response.mp3"
+        except Exception as e:
+            print(f"TTS conversion error: {e}")
+            # Fallback to gTTS
+            from gtts import gTTS
+            tts = gTTS(text=text, lang='en')
+            tts.save("response.mp3")
+            return "response.mp3"
     
     def animate_response(self, text):
         # Debug: print the input text for which we are animating
