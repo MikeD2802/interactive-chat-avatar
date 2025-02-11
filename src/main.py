@@ -15,8 +15,12 @@ from live_portrait_integration import setup_live_portrait
 
 class ChatAvatar:
     def __init__(self, source_image_path):
-        # Initialize updated Ollama LLM
-        self.llm = OllamaLLM(model="llama2")
+        # Initialize updated Ollama LLM with explicit configuration
+        self.llm = OllamaLLM(
+            model="llama2",
+            temperature=0.7,  # Optional: add more control
+            top_p=0.9         # Optional: additional LLM parameter
+        )
         
         # Initialize conversation history
         self.history = []
@@ -27,10 +31,11 @@ class ChatAvatar:
             ("user", "{input}")
         ])
         
-        # Use a specific sentiment analysis model
+        # Use a specific sentiment analysis model with explicit revision
         self.sentiment_analyzer = pipeline(
             "sentiment-analysis", 
-            model="distilbert-base-uncased-finetuned-sst-2-english"
+            model="distilbert-base-uncased-finetuned-sst-2-english",
+            revision="714eb0f"  # Explicitly specify revision
         )
         
         # Load and setup LivePortrait
