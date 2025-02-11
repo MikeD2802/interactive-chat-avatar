@@ -1,6 +1,5 @@
-import gradio as gr
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_ollama import OllamaLLM
+from langchain_ollama import OllamaLLM  # updated import
 from gtts import gTTS
 import os
 import json
@@ -14,20 +13,15 @@ from live_portrait_integration import setup_live_portrait
 
 class ChatAvatar:
     def __init__(self, source_image_path):
-        # Initialize Ollama LLM with explicit configuration
-        self.llm = OllamaLLM(
-            model="llama2",
-            temperature=0.7,  # Add temperature for more dynamic responses
-            top_p=0.9,  # Optional: additional LLM parameter
-            num_ctx=4096  # Optional: context window size
-        )
+        # Initialize updated Ollama LLM
+        self.llm = OllamaLLM(model="llama2")
         
         # Initialize conversation history
         self.history = []
         
-        # Define avatar personality prompt with more context
+        # Define avatar personality prompt
         self.prompt = ChatPromptTemplate.from_messages([
-            ("system", "You are a helpful and friendly AI assistant. Respond naturally and conversationally, with empathy and clarity."),
+            ("system", "You are a helpful and friendly AI assistant. Respond naturally and conversationally."),
             ("user", "{input}")
         ])
         
@@ -100,7 +94,6 @@ def create_interface(source_image_path):
     with gr.Blocks() as iface:
         with gr.Row():
             with gr.Column(scale=2):
-                # Explicitly set the type parameter to 'messages'
                 chatbot = gr.Chatbot(type="messages")
                 msg = gr.Textbox(label="Message")
                 clear = gr.ClearButton([msg, chatbot])
