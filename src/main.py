@@ -1,5 +1,5 @@
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_ollama import OllamaLLM  # updated import
+from langchain_ollama import OllamaLLM
 import gradio as gr
 from gtts import gTTS
 import os
@@ -31,21 +31,19 @@ class ChatAvatar:
         self.sentiment_analyzer = pipeline(
             "sentiment-analysis", 
             model="distilbert-base-uncased-finetuned-sst-2-english",
-            revision="714eb0f"  # Explicitly specify revision
+            revision="714eb0f"
         )
         
-        # Verify source image
+        # Verify and load source image
         print(f"Loading source image from: {source_image_path}")
         if not Path(source_image_path).exists():
-            print(f"ERROR: Source image not found at {source_image_path}")
             raise FileNotFoundError(f"Source image not found at {source_image_path}")
         
-        # Load and setup LivePortrait
-        self.portrait = setup_live_portrait()
         self.source_image = Image.open(source_image_path)
         print(f"Source image loaded. Size: {self.source_image.size}, Mode: {self.source_image.mode}")
         
-        # Initialize sentiment analyzer for expressions
+        # Setup LivePortrait and animator
+        self.portrait = setup_live_portrait()
         self.animator = AvatarAnimator()
     
     def generate_response(self, user_input):
@@ -69,45 +67,39 @@ class ChatAvatar:
         return "response.mp3"
     
     def animate_response(self, text):
+        # Debug: print the input text for which we are animating
+        print("Animating response for text:", text)
+        
         # Analyze sentiment and generate expression parameters
-        sentiment = self.sentiment_analyzer(text)[0]
-        expression = self.animator.generate_expression(sentiment)
+        sentiment = self.sentiment_analyzer(text)
+        expression = self.animator.generate_expression(sentiment[0])
+        print("Expression parameters:", expression)
         
-        # Debug print for text and sentiment
-        print(f"Analyzing text: {text}")
-        print(f"Sentiment analysis result: {sentiment}")
-        print(f"Generated expression: {expression}")
+        # Call LivePortrait integration to generate frames
+        frames = self.portrait.generate_animation(self.source_image, expression_params=expression)
         
-        # Generate animation frames using LivePortrait
+        if frames is None:
+            print("generate_animation returned None!")
+            return None
+        
+        if not isinstance(frames, list):
+            print("generate_animation did not return a list. Got:", type(frames))
+            return None
+        
+        print("Number of frames returned:", len(frames))
+        
+        if len(frames) == 0:
+            print("No frames were generated. Check your LivePortrait integration!")
+            return None
+        
+        # Convert the list of frames into a video file (animation.mp4)
+        video_path = "animation.mp4"
         try:
-            frames = self.portrait.generate_animation(
-                self.source_image,
-                expression_params=expression
-            )
-            
-            # Detailed frame debugging
-            if frames is None:
-                print("generate_animation returned None.")
-                return None
-            else:
-                print(f"Number of frames returned: {len(frames)}")
-            
-            # Convert frames to a video file if there are frames
-            if len(frames) == 0:
-                print("No frames were generated. Check your LivePortrait integration.")
-                return None
-
-            video_path = "animation.mp4"
-            try:
-                imageio.mimsave(video_path, frames, fps=30)
-                print(f"Video saved to {video_path}")
-                return video_path
-            except Exception as e:
-                print(f"Error creating video: {e}")
-                return None
-        
+            imageio.mimsave(video_path, frames, fps=30)
+            print("Video saved to", video_path)
+            return video_path
         except Exception as e:
-            print(f"Error in generate_animation: {e}")
+            print("Error creating video:", e)
             return None
 
 def create_interface(source_image_path):
