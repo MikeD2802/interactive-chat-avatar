@@ -1,26 +1,26 @@
-# Core dependencies
-gradio>=4.0.0
-langchain-core>=0.1.0
-langchain-ollama>=0.1.0
-transformers>=4.36.0
 torch>=2.0.0
-numpy>=1.24.0
-gTTS>=2.4.0
-ollama>=0.1.0
-Pillow>=10.0.0
-pyyaml>=6.0.1
-huggingface_hub[cli]>=0.20.3
-imageio>=2.31.0
-imageio-ffmpeg>=0.4.8
-
-# TTS Dependencies
-elevenlabs-mcp-server==0.1.1
-python-dotenv>=1.0.0  # For environment variable management
-
-# Scientific computing and ML
-scipy>=1.12.0,<1.14.0
-opencv-python>=4.7.0.72
-
-# Specific for LivePortrait
-# Requires manual build steps on some systems
-# Refer to LivePortrait documentation for detailed installation
+torchvision>=0.15.0
+numpy
+scipy
+scikit-image
+scikit-learn
+opencv-python
+opencv-contrib-python
+face-alignment
+imageio
+imageio-ffmpeg
+pyyaml
+tqdm
+yacs
+joblib
+gfpgan
+av
+safetensors
+gradio
+transformers
+einops
+mediapy
+pillow
+huggingface_hub
+ollama
+dlib
