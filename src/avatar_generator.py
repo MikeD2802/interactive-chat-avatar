@@ -11,6 +11,15 @@ class AvatarGenerator:
         self.checkpoint_path = checkpoint_path or 'checkpoints'
         self.temp_dir = tempfile.mkdtemp()
         self.initialized = False
+        self.default_config = {
+            'exp_scale': 1.0,
+            'pose_style': 1.0,
+            'use_enhancer': True,
+            'batch_size': 1,
+            'size': 256,
+            'still_mode': False,
+            'use_ref_video': False
+        }
         
     async def initialize(self):
         if self.initialized:
@@ -21,7 +30,7 @@ class AvatarGenerator:
             os.makedirs(self.checkpoint_path, exist_ok=True)
             await download_model('sadtalker')
             
-        # Import SadTalker modules here to avoid loading them before model download
+        # Import SadTalker modules
         sys.path.append('src/SadTalker')
         from src.face3d.models.facerecon_model import FaceReconModel
         from src.generate_batch import SadTalker
@@ -32,12 +41,25 @@ class AvatarGenerator:
         )
         self.initialized = True
         
-    async def generate_talking_avatar(self, source_image, audio_path=None, text=None):
-        """Generate a talking avatar video from either audio or text"""
+    def prepare_config(self, config=None):
+        """Merge provided config with defaults"""
+        if config is None:
+            return self.default_config
+            
+        return {
+            **self.default_config,
+            **config
+        }
+        
+    async def generate_talking_avatar(self, source_image, audio_path=None, text=None, config=None):
+        """Generate a talking avatar video with customization options"""
         if not self.initialized:
             await self.initialize()
             
-        # Create temporary paths for processing
+        # Prepare configuration
+        full_config = self.prepare_config(config)
+        
+        # Create temporary paths
         temp_source = os.path.join(self.temp_dir, 'source.jpg')
         temp_output = os.path.join(self.temp_dir, 'output.mp4')
         
@@ -49,16 +71,20 @@ class AvatarGenerator:
         else:
             source_path = source_image
             
-        # Generate video
+        # Generate video with customizations
         try:
             result = await self.sad_talker.animate(
                 source_path=source_path,
                 audio_path=audio_path,
                 text=text,
                 output_path=temp_output,
-                still_mode=False,
-                use_enhancer=True,
-                batch_size=1
+                still_mode=full_config['still_mode'],
+                use_enhancer=full_config['use_enhancer'],
+                batch_size=full_config['batch_size'],
+                size=full_config['size'],
+                pose_style=full_config['pose_style'],
+                exp_scale=full_config['exp_scale'],
+                use_ref_video=full_config['use_ref_video']
             )
             
             # Read the generated video
@@ -77,6 +103,15 @@ class AvatarGenerator:
                 os.remove(temp_source)
             if os.path.exists(temp_output):
                 os.remove(temp_output)
+                
+    async def preload_models(self):
+        """Preload models for faster generation"""
+        if not self.initialized:
+            await self.initialize()
+            
+        # Preload face recognition model
+        if hasattr(self.sad_talker, 'preload'):
+            await self.sad_talker.preload()
                 
     def __del__(self):
         """Cleanup temporary directory on object destruction"""
